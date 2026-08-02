@@ -11,9 +11,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.intercomhub.voo4l3",
-      "config": {
-        "googleMapsApiKey": "REPLACE_WITH_YOUR_GOOGLE_MAPS_IOS_KEY"
-      },
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Scan and connect to your motorcycle intercom",
         "NSBluetoothPeripheralUsageDescription": "Connect to nearby intercom devices",
@@ -32,11 +29,6 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.intercomhub.voo4l3",
-      "config": {
-        "googleMaps": {
-          "apiKey": "REPLACE_WITH_YOUR_GOOGLE_MAPS_ANDROID_KEY"
-        }
-      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
