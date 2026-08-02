@@ -47,7 +47,14 @@ export async function api<T = any>(
     let msg = `Error ${res.status}`;
     try {
       const j = await res.json();
-      msg = j.detail || msg;
+      if (typeof j.detail === 'string') {
+        msg = j.detail;
+      } else if (Array.isArray(j.detail)) {
+        // FastAPI 422 validation payload: [{msg, loc, type}, ...]
+        msg = j.detail.map((d: any) => d?.msg || 'Invalid').join(', ');
+      } else if (j.detail && typeof j.detail === 'object') {
+        msg = j.detail.msg || JSON.stringify(j.detail);
+      }
     } catch {}
     throw new Error(msg);
   }
