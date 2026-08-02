@@ -37,12 +37,14 @@ A cross-brand motorcycle intercom companion app for group riding. Riders pair th
    - Text messages fallback (poll every 4s while open)
    - Per-group message thread
 
-7. **Ride Log**
-   - Dashboard stats (total km, ride count, groups)
-   - "Log Ride" seeds a demo ride
+7. **Ride Log & History**
+   - Dashboard "Recent Rides" (top 5) + `SEE ALL` → full `/rides` list
+   - Ride detail: distance/duration/top-speed, start+end markers on map, ROUTE POINTS card, delete ride
+   - **GPX export** — one-tap download of ride as GPX 1.1 file (native uses Sharing sheet, web triggers browser download). Marketed as a Rider Pro perk.
+   - **Ride heatmap** — sampled route points across all rides rendered on the map (Pro perk). Empty state guides user to record their first ride.
 
 8. **Profile**
-   - Basic profile with bike info, sign out
+   - Basic profile with bike info, sign-out
 
 ## Technical Notes / Caveats
 
