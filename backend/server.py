@@ -356,6 +356,38 @@ async def logout(authorization: Optional[str] = Header(None), user=Depends(get_c
     return {"ok": True}
 
 
+@api_router.delete("/auth/account")
+async def delete_account(user=Depends(get_current_user)):
+    """Permanently delete the current user's account and all their data."""
+    uid = user["user_id"]
+    # Delete personal collections
+    await db.user_sessions.delete_many({"user_id": uid})
+    await db.devices.delete_many({"user_id": uid})
+    await db.ride_points.delete_many({"user_id": uid})
+    await db.rides.delete_many({"user_id": uid})
+    await db.ride_shares.delete_many({"user_id": uid})
+    await db.sos_alerts.delete_many({"user_id": uid})
+    await db.subscriptions.delete_many({"user_id": uid})
+    # Remove from groups + delete owned groups (with their messages/locations/members)
+    owned = await db.groups.find({"owner_id": uid}, {"_id": 0, "group_id": 1}).to_list(500)
+    owned_ids = [g["group_id"] for g in owned]
+    if owned_ids:
+        await db.messages.delete_many({"group_id": {"$in": owned_ids}})
+        await db.locations.delete_many({"group_id": {"$in": owned_ids}})
+        await db.group_members.delete_many({"group_id": {"$in": owned_ids}})
+        await db.groups.delete_many({"group_id": {"$in": owned_ids}})
+    # Detach memberships in other groups
+    await db.group_members.delete_many({"user_id": uid})
+    # Anonymize past messages so group history stays intact
+    await db.messages.update_many(
+        {"user_id": uid},
+        {"$set": {"user_id": "deleted", "user_name": "Deleted rider"}},
+    )
+    # Finally delete the user
+    await db.users.delete_one({"user_id": uid})
+    return {"deleted": True}
+
+
 # ============= Groups =============
 def _invite_code():
     return uuid.uuid4().hex[:6].upper()
@@ -950,7 +982,7 @@ async def public_ride_json(token: str):
 
 
 @app.get("/api/public/ride/{token}", response_class=HTMLResponse)
-async def public_ride_html(token: str):
+async def public_ride_html(token: str, request: Request):
     """Server-rendered HTML page for shared ride — no auth required."""
     share = await db.ride_shares.find_one({"token": token}, {"_id": 0})
     if not share:
@@ -1042,7 +1074,7 @@ async def public_ride_html(token: str):
       </svg>
     </div>
     <div class="cta">
-      <a href="https://intercom-hub-3.preview.emergentagent.com" target="_blank" rel="noopener">OPEN MOTOCOM</a>
+      <a href="{(STRIPE_PUBLIC_API_URL or str(request.base_url).rstrip('/'))}" target="_blank" rel="noopener">OPEN MOTOCOM</a>
       <a class="ghost" href="/api/rides/{share['ride_id']}/gpx">DOWNLOAD GPX</a>
     </div>
     <div class="foot">Powered by MotoCom · Group riding, connected.</div>

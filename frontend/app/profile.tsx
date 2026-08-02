@@ -1,16 +1,32 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, ActivityIndicator, TextInput, Platform, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { colors, spacing, radius } from '@/src/theme';
 import { useAuth } from '@/src/auth';
+import { api } from '@/src/api';
 
 export default function Profile() {
   const { user, signOut } = useAuth();
   const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const initials = (user?.name || user?.email || '?').slice(0, 2).toUpperCase();
+
+  const doDelete = async () => {
+    setDeleting(true); setDeleteError('');
+    try {
+      await api('/auth/account', { method: 'DELETE' });
+      await signOut();
+    } catch (e: any) {
+      setDeleteError(e?.message || 'Failed to delete account');
+      setDeleting(false);
+    }
+  };
 
   const rows: { icon: any; label: string; onPress: () => void; testID: string; badge?: string }[] = [
     { icon: 'crown', label: 'Rider Pro', onPress: () => router.push('/rider-pro'), testID: 'profile-riderpro-row', badge: 'UPGRADE' },
@@ -72,7 +88,61 @@ export default function Profile() {
           <MaterialCommunityIcons name="logout" size={18} color={colors.error} />
           <Text style={s.signOutText}>Sign out</Text>
         </Pressable>
+
+        <Pressable
+          onPress={() => { setDeleteOpen(true); setConfirmText(''); setDeleteError(''); }}
+          style={s.deleteBtn}
+          testID="profile-delete-account-button"
+        >
+          <MaterialCommunityIcons name="account-remove" size={14} color={colors.onSurfaceTertiary} />
+          <Text style={s.deleteText}>Delete account</Text>
+        </Pressable>
       </ScrollView>
+
+      <Modal transparent animationType="fade" visible={deleteOpen} onRequestClose={() => setDeleteOpen(false)}>
+        <View style={s.overlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', maxWidth: 380 }}>
+            <View style={s.sheet} testID="delete-account-sheet">
+              <View style={s.deleteIconBox}>
+                <MaterialCommunityIcons name="alert-octagram" size={30} color={colors.error} />
+              </View>
+              <Text style={s.sheetTitle}>Delete account?</Text>
+              <Text style={s.sheetBody}>
+                This permanently deletes your profile, rides, GPS traces, paired devices, groups you own, and cancels your Rider Pro subscription. This cannot be undone.
+              </Text>
+              <Text style={s.sheetHint}>Type <Text style={{ color: colors.error, fontWeight: '900' }}>DELETE</Text> to confirm.</Text>
+              <TextInput
+                value={confirmText}
+                onChangeText={setConfirmText}
+                autoCapitalize="characters"
+                placeholder="DELETE"
+                placeholderTextColor={colors.onSurfaceTertiary}
+                style={s.confirmInput}
+                testID="delete-confirm-input"
+              />
+              {!!deleteError && <Text style={s.errText}>{deleteError}</Text>}
+              <View style={s.btnRow}>
+                <Pressable
+                  onPress={() => setDeleteOpen(false)}
+                  disabled={deleting}
+                  style={[s.ghost, { flex: 1 }]}
+                  testID="delete-cancel-button"
+                >
+                  <Text style={s.ghostText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={doDelete}
+                  disabled={deleting || confirmText.trim().toUpperCase() !== 'DELETE'}
+                  style={[s.danger, { flex: 1 }, (confirmText.trim().toUpperCase() !== 'DELETE' || deleting) && { opacity: 0.5 }]}
+                  testID="delete-confirm-button"
+                >
+                  {deleting ? <ActivityIndicator color={colors.onError} /> : <Text style={s.dangerText}>DELETE</Text>}
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -131,4 +201,39 @@ const s = StyleSheet.create({
     marginTop: spacing.xl, paddingVertical: spacing.md,
   },
   signOutText: { color: colors.error, fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+  deleteBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    marginTop: spacing.sm, paddingVertical: spacing.sm,
+  },
+  deleteText: { color: colors.onSurfaceTertiary, fontSize: 12 },
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
+  },
+  sheet: {
+    width: '100%', maxWidth: 380,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong,
+    padding: spacing.xl, gap: spacing.sm, alignItems: 'center',
+  },
+  deleteIconBox: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: 'rgba(255,59,48,0.15)',
+    borderWidth: 1, borderColor: colors.error,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sheetTitle: { color: colors.onSurface, fontSize: 20, fontWeight: '900', textAlign: 'center' },
+  sheetBody: { color: colors.onSurfaceSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  sheetHint: { color: colors.onSurfaceSecondary, fontSize: 12, textAlign: 'center', marginTop: spacing.sm },
+  confirmInput: {
+    width: '100%', height: 48, borderRadius: radius.md,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, color: colors.onSurface, fontSize: 15, textAlign: 'center', letterSpacing: 4,
+  },
+  errText: { color: colors.error, fontSize: 12, textAlign: 'center' },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, width: '100%', marginTop: spacing.sm },
+  ghost: { height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  ghostText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '700' },
+  danger: { height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.error },
+  dangerText: { color: colors.onError, fontSize: 13, fontWeight: '900', letterSpacing: 1 },
 });
