@@ -204,6 +204,17 @@ class CheckoutInput(BaseModel):
     return_url: str
 
 
+class SosInput(BaseModel):
+    lat: float
+    lng: float
+    message: Optional[str] = None
+
+
+class ShareCreateOut(BaseModel):
+    token: str
+    url: str
+
+
 class BillingStatus(BaseModel):
     is_pro: bool
     status: Optional[str] = None
@@ -838,6 +849,207 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
+
+
+# ============= Emergency SOS =============
+@api_router.post("/sos")
+async def emergency_sos(body: SosInput, user=Depends(get_current_user)):
+    """Broadcast an emergency message to every group the user belongs to."""
+    memberships = await db.group_members.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(500)
+    group_ids = [m["group_id"] for m in memberships]
+
+    maps_url = f"https://www.google.com/maps?q={body.lat:.6f},{body.lng:.6f}"
+    text = (
+        f"🆘 EMERGENCY from {user.get('name', 'Rider')}. "
+        f"Live location: {maps_url}"
+    )
+    if body.message:
+        text += f"\nNote: {body.message[:200]}"
+
+    sos_id = new_id("sos")
+    await db.sos_alerts.insert_one({
+        "sos_id": sos_id,
+        "user_id": user["user_id"],
+        "user_name": user.get("name"),
+        "lat": body.lat,
+        "lng": body.lng,
+        "message": body.message,
+        "group_ids": group_ids,
+        "created_at": now_utc(),
+    })
+
+    msg_ids: List[str] = []
+    for gid in group_ids:
+        m = {
+            "message_id": new_id("msg"),
+            "group_id": gid,
+            "user_id": user["user_id"],
+            "user_name": user.get("name", ""),
+            "text": text,
+            "created_at": now_utc(),
+        }
+        await db.messages.insert_one(m)
+        msg_ids.append(m["message_id"])
+
+    return {
+        "sos_id": sos_id,
+        "notified_groups": len(group_ids),
+        "message_ids": msg_ids,
+        "maps_url": maps_url,
+    }
+
+
+# ============= Ride Sharing =============
+@api_router.post("/rides/{ride_id}/share", response_model=ShareCreateOut)
+async def create_ride_share(ride_id: str, request: Request, user=Depends(get_current_user)):
+    r = await db.rides.find_one({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Ride not found")
+    existing = await db.ride_shares.find_one({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0})
+    if existing:
+        token = existing["token"]
+    else:
+        token = uuid.uuid4().hex[:16]
+        await db.ride_shares.insert_one({
+            "token": token,
+            "ride_id": ride_id,
+            "user_id": user["user_id"],
+            "created_at": now_utc(),
+        })
+    base = STRIPE_PUBLIC_API_URL or str(request.base_url).rstrip("/")
+    return ShareCreateOut(token=token, url=f"{base}/api/public/rides/{token}")
+
+
+@api_router.delete("/rides/{ride_id}/share")
+async def revoke_ride_share(ride_id: str, user=Depends(get_current_user)):
+    res = await db.ride_shares.delete_many({"ride_id": ride_id, "user_id": user["user_id"]})
+    return {"revoked": res.deleted_count}
+
+
+@api_router.get("/public/rides/{token}")
+async def public_ride_json(token: str):
+    share = await db.ride_shares.find_one({"token": token}, {"_id": 0})
+    if not share:
+        raise HTTPException(404, "Share not found")
+    r = await db.rides.find_one({"ride_id": share["ride_id"]}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Ride not found")
+    pts = await db.ride_points.find({"ride_id": share["ride_id"]}, {"_id": 0, "user_id": 0}).sort("ts", 1).to_list(20000)
+    owner = await db.users.find_one({"user_id": share["user_id"]}, {"_id": 0, "password_hash": 0}) or {}
+    return {
+        "ride": {
+            "name": r.get("name"),
+            "distance_km": r.get("distance_km"),
+            "duration_min": r.get("duration_min"),
+            "top_speed": r.get("top_speed"),
+            "created_at": r.get("created_at"),
+        },
+        "owner_name": owner.get("name") or "Rider",
+        "points": pts,
+    }
+
+
+@app.get("/api/public/ride/{token}", response_class=HTMLResponse)
+async def public_ride_html(token: str):
+    """Server-rendered HTML page for shared ride — no auth required."""
+    share = await db.ride_shares.find_one({"token": token}, {"_id": 0})
+    if not share:
+        return HTMLResponse(
+            "<!doctype html><html><body style='background:#111;color:#fff;font-family:system-ui;text-align:center;padding:40px'>"
+            "<h2>Ride not found</h2><p>This link may have been revoked.</p></body></html>",
+            status_code=404,
+        )
+    r = await db.rides.find_one({"ride_id": share["ride_id"]}, {"_id": 0})
+    if not r:
+        return HTMLResponse("<h2>Ride not found</h2>", status_code=404)
+    pts = await db.ride_points.find({"ride_id": share["ride_id"]}, {"_id": 0}).sort("ts", 1).to_list(20000)
+    owner = await db.users.find_one({"user_id": share["user_id"]}, {"_id": 0, "password_hash": 0}) or {}
+
+    # Build inline SVG polyline
+    svg_path = ""
+    if pts:
+        lats = [p["lat"] for p in pts]
+        lngs = [p["lng"] for p in pts]
+        min_lat, max_lat = min(lats), max(lats)
+        min_lng, max_lng = min(lngs), max(lngs)
+        d_lat = max(0.0001, max_lat - min_lat)
+        d_lng = max(0.0001, max_lng - min_lng)
+        W, H = 720, 420
+        pad = 30
+        pts_xy = []
+        for p in pts[::max(1, len(pts) // 500)]:
+            x = pad + ((p["lng"] - min_lng) / d_lng) * (W - 2 * pad)
+            y = pad + ((max_lat - p["lat"]) / d_lat) * (H - 2 * pad)
+            pts_xy.append(f"{x:.1f},{y:.1f}")
+        svg_path = " ".join(pts_xy)
+
+    name = (r.get("name") or "Ride").replace("<", "&lt;").replace("&", "&amp;")
+    owner_name = (owner.get("name") or "Rider").replace("<", "&lt;").replace("&", "&amp;")
+    created = r.get("created_at")
+    date_str = created.strftime("%b %d, %Y · %H:%M") if hasattr(created, "strftime") else str(created or "")
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>{name} — MotoCom</title>
+<style>
+  body {{ margin:0; background:#111; color:#F5F5F5; font-family:-apple-system,system-ui,Roboto,sans-serif; }}
+  .wrap {{ max-width: 780px; margin: 0 auto; padding: 24px 20px 64px; }}
+  .brand {{ display:flex; align-items:center; gap:12px; margin-bottom: 24px; }}
+  .logo {{ width:44px; height:44px; border-radius:8px; background:#FF5E00; display:flex; align-items:center; justify-content:center; font-weight:900; color:#000; font-size:20px; }}
+  h1 {{ font-size: 28px; margin: 0 0 4px; }}
+  .meta {{ color:#A3A3A3; font-size: 13px; margin-bottom: 24px; }}
+  .stats {{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom: 24px; }}
+  .stat {{ background:#1C1C1C; border:1px solid #2C2C2E; border-radius:12px; padding:14px; }}
+  .stat .l {{ color:#A3A3A3; font-size:10px; letter-spacing:1.5px; font-weight:700; }}
+  .stat .v {{ color:#F5F5F5; font-size:22px; font-weight:900; margin-top:6px; }}
+  .map {{ background:#0A0A0A; border:1px solid #2C2C2E; border-radius:12px; padding:0; overflow:hidden; }}
+  svg {{ display:block; width:100%; height:auto; }}
+  .cta {{ margin-top: 24px; display:flex; gap:12px; flex-wrap:wrap; }}
+  .cta a {{ text-decoration:none; padding:12px 18px; border-radius:10px; background:#FF5E00; color:#000; font-weight:900; letter-spacing:1px; font-size:13px; }}
+  .cta a.ghost {{ background: transparent; color:#F5F5F5; border:1px solid #3A3A3C; }}
+  .foot {{ color:#666; font-size:11px; margin-top:32px; text-align:center; }}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div>
+        <div style="font-weight:900; letter-spacing:2px;">MOTOCOM</div>
+        <div style="color:#A3A3A3; font-size:12px;">Ride shared by {owner_name}</div>
+      </div>
+    </div>
+    <h1>{name}</h1>
+    <div class="meta">{date_str} · {len(pts)} GPS points</div>
+    <div class="stats">
+      <div class="stat"><div class="l">DISTANCE</div><div class="v">{(r.get('distance_km') or 0):.1f} km</div></div>
+      <div class="stat"><div class="l">DURATION</div><div class="v">{r.get('duration_min') or 0} min</div></div>
+      <div class="stat"><div class="l">TOP SPEED</div><div class="v">{round(r.get('top_speed') or 0)} km/h</div></div>
+    </div>
+    <div class="map">
+      <svg viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+            <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(255,94,0,0.08)" stroke-width="1"/>
+          </pattern>
+        </defs>
+        <rect width="720" height="420" fill="#0A0A0A"/>
+        <rect width="720" height="420" fill="url(#grid)"/>
+        {'<polyline points="' + svg_path + '" fill="none" stroke="#FF5E00" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>' if svg_path else '<text x="360" y="210" text-anchor="middle" fill="#A3A3A3" font-family="system-ui" font-size="14">No GPS points</text>'}
+      </svg>
+    </div>
+    <div class="cta">
+      <a href="https://intercom-hub-3.preview.emergentagent.com" target="_blank" rel="noopener">OPEN MOTOCOM</a>
+      <a class="ghost" href="/api/rides/{share['ride_id']}/gpx">DOWNLOAD GPX</a>
+    </div>
+    <div class="foot">Powered by MotoCom · Group riding, connected.</div>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(html)
 
 
 @api_router.get("/")

@@ -202,7 +202,7 @@ const s = StyleSheet.create({
   pttBtn: {
     width: 220, height: 220, borderRadius: 110,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 12,
+    boxShadow: '0 10px 20px rgba(0,0,0,0.5)', elevation: 12,
   },
   stateLabel: { fontSize: 16, fontWeight: '900', letterSpacing: 3, marginTop: spacing.xl },
   hint: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: spacing.sm, textAlign: 'center', paddingHorizontal: spacing.xl },

@@ -13,12 +13,16 @@ export default function RidesScreen() {
   const [rides, setRides] = useState<Ride[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
       const r = await api<Ride[]>('/rides');
       setRides(r);
-    } catch {} finally { setLoading(false); }
+      setError('');
+    } catch (e: any) {
+      setError(e?.message || 'Could not load rides');
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -55,7 +59,14 @@ export default function RidesScreen() {
       {loading ? (
         <View style={s.loader}><ActivityIndicator color={colors.brand} /></View>
       ) : (
-        <FlatList
+        <>
+          {!!error && (
+            <View style={s.errorBar} testID="rides-error">
+              <MaterialCommunityIcons name="alert-circle" size={14} color={colors.error} />
+              <Text style={s.errorText}>{error}</Text>
+            </View>
+          )}
+          <FlatList
           data={rides}
           keyExtractor={(r) => r.ride_id}
           contentContainerStyle={s.list}
@@ -87,6 +98,7 @@ export default function RidesScreen() {
             </Pressable>
           )}
         />
+        </>
       )}
     </SafeAreaView>
   );
@@ -127,4 +139,12 @@ const s = StyleSheet.create({
   cardName: { color: colors.onSurface, fontSize: 15, fontWeight: '800' },
   cardMeta: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
   cardDate: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
+  errorBar: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center',
+    marginHorizontal: spacing.lg, marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    backgroundColor: 'rgba(255,59,48,0.12)', borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.error,
+  },
+  errorText: { color: colors.error, fontSize: 12, flex: 1 },
 });

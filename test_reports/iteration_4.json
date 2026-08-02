@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 4 testing COMPLETE. Backend: 55/55 pytest PASS (40 regression from iter1-3 + 15 NEW iter4 tests). All new endpoints work exactly as specified: (1) POST /api/sos with {lat,lng} inserts sos_alert AND creates a chat message in EVERY group the user belongs to; response has sos_id (sos_ prefix), notified_groups, message_ids[], maps_url (google.com/maps?q=lat,lng). Verified by listing messages in both groups and confirming '🆘 EMERGENCY' text is present. (2) POST /api/sos with 0 groups → 200, notified_groups=0, message_ids=[]. (3) POST /api/rides/{id}/share returns {token,url}; repeated calls return SAME token (idempotent). DELETE /api/rides/{id}/share revokes → subsequent GET /api/public/rides/{token} and GET /api/public/ride/{token} both return 404. (4) GET /api/public/rides/{token} JSON: NO auth required, returns ride+points+owner_name. (5) GET /api/public/ride/{token} HTML: 200 text/html, contains <title> with ride name; ride WITH points contains '<polyline points='; empty ride contains 'No GPS points'; bad token returns 404 with HTML. Frontend (Expo web, 390x844) verified via browser automation with real backend: (a) Map tab shows red pill SOS button (testID map-sos-button, 64x64 in bottom-right at x=310,y=604) with pulse ring. (b) Tapping opens sos-sheet modal. (c) SEND SOS (sos-open-confirm-button) → confirmation view with sos-confirm-button. (d) Confirming with 1 group membership → 'SOS BROADCASTED — Alert sent to 1 group. Your live location was shared via chat.' with CLOSE button (sos-close-button). (e) Ride detail shows SHARE RIDE button (testID share-ride-button) below DOWNLOAD GPX (testID download-gpx-button). (f) With navigator.share removed, clicking share triggers clipboard fallback and shows 'Public link copied to clipboard!' via testID ride-message. (g) Rides list (testID rides-screen) loads without rides-error toast when /api/rides responds OK. NO deprecated shadow* warnings observed on iter4 screens (SOS button uses boxShadow correctly at src/sos.tsx:176). Regression: register/login (email + Google OAuth entry) work.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "register-error (auth/register.tsx line 47)",
+        "issue": "When /api/auth/register returns 422 (e.g., blocked email TLD like .test), the register-error box renders '[object Object]' instead of the API error detail. Not blocking iter4 flows (falls back to any valid email) but a UX defect — the error handler is stringifying the FastAPI 422 detail array as the raw object. Reference: /app/frontend/app/(auth)/register.tsx and its error-handling path.",
+        "testID": "register-error",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter4_sos_share.py",
+    "/app/backend/tests/test_iter3_rides.py",
+    "/app/backend/tests/test_iter2_new.py",
+    "/app/backend/tests/test_motocom_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional / low priority) Fix register-error stringification in /app/frontend/app/(auth)/register.tsx so the FastAPI 422 detail object is rendered as readable text (e.g., extract .detail[0].msg or JSON.stringify) instead of '[object Object]'. Reproduces by attempting registration with a .test TLD email or omitting a required field.",
+    "(Chore, still pending from iter3) Migrate remaining shadow* style props to boxShadow across other screens to fully silence RN-web deprecation warnings. Iter4 SOS button (src/sos.tsx:176) already uses boxShadow correctly."
+  ],
+  "critical_code_review_comments": [
+    "server.py:855-899 (emergency_sos): correctly inserts sos_alerts document AND fans out one chat message per group. maps_url formatted with 6-decimal precision. Handles 0-groups case gracefully (empty msg_ids list, notified_groups=0). No _id leaks (all inserts return their own dict).",
+    "server.py:903-920 (create_ride_share): idempotency implemented by checking existing ride_shares document for (ride_id, user_id) before creating a new one; token reuse verified via test_share_is_idempotent_same_token. 404 correctly enforced for foreign rides via the same query filter.",
+    "server.py:929-949 (public_ride_json) and server.py:952-1052 (public_ride_html) correctly exposed WITHOUT get_current_user dependency — public access works with no auth header. HTML escapes '<' and '&' in name/owner_name (line 986-987) but does NOT escape '\"' or '>'; low risk since these are only quoted in <title> text content, not attributes. Consider full HTML escaping via html.escape() for defense-in-depth.",
+    "server.py:923-926 (revoke_ride_share): uses delete_many scoped to (ride_id, user_id) → prevents cross-user revocation. Returns {revoked: count} — matches contract; frontend can distinguish 0 from >0.",
+    "server.py:1041: polyline vs 'No GPS points' branch is a clean inline ternary in the f-string; verified both branches render correctly.",
+    "src/sos.tsx: SosButton uses boxShadow (not deprecated shadow* props) at line 176 — good. Modal correctly wired to three views (initial → confirming → result). All interactive elements have testIDs.",
+    "map.tsx:129-131 positions SosButton absolute at right:spacing.lg, bottom:96+spacing.lg — bottom-right floating pill above the ACTIVE RIDERS bottom bar. Verified visually at x=310,y=604 on 390x844 viewport with 64x64 hitbox (meets 44px touch target)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter4_sos_share.py (NEW — 15 test cases across SOS broadcast, ride share create/idempotent/revoke, public JSON, public HTML)"
+  ],
+  "success_rate": {"backend": "100% (55/55, incl. 15 new iter4)", "frontend": "100% (all iter4 flows verified end-to-end: SOS broadcast to 1 group, share ride clipboard fallback, rides-error banner absent when API healthy)"},
+  "seed_data_creation": "Ephemeral test users via /api/auth/register (emails test_iter4a_<hex>@, test_iter4b_<hex>@, test_iter4lonely_<hex>@motocom-test.com); 2 groups per pytest run (TEST_SOS_Group_<hex>); real tracked rides seeded via /api/rides/track (TEST_Iter4ShareRide with 5 points, TEST_RevokeRide, TEST_ToBeProtected) and one 0-point demo ride (TEST_EmptyShareRide). One UI-flow ephemeral user (uitest_<hex>@example.com). No manual cleanup needed on preview DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter4 delivers Emergency SOS broadcast + Ride sharing (public token + backend HTML). Backend: https://intercom-hub-3.preview.emergentagent.com/api. Frontend testIDs added in iter4: map-sos-button, sos-sheet, sos-open-confirm-button, sos-confirm-button, sos-close-button, sos-cancel-button, sos-dismiss-button, sos-error, share-ride-button, rides-error. Auth token localStorage key is 'motocom_token' (NOT 'motocom_auth_token'). Register endpoint uses Pydantic EmailStr which rejects .test TLD → use example.com for UI seed users. Public routes: /api/public/rides/{token} (JSON) and /api/public/ride/{token} (HTML) are BOTH unauth. Share is idempotent per (ride_id,user_id). Ride-detail screen shows SHARE RIDE below DOWNLOAD GPX at rides/[id].tsx line 228+. On web without navigator.share, share triggers clipboard.writeText fallback and sets ride-message='Public link copied to clipboard!'. Rides list swallows errors in load(); rides-error banner (rides/index.tsx:64) only appears if the fetch throws — verified banner is absent when API is healthy.",
+  "rca_of_issue": "No new bugs found in iter4 backend or in the primary iter4 frontend flows. One pre-existing minor frontend UX defect surfaced during registration testing: register-error renders '[object Object]' on 422 responses because the error handler doesn't extract .detail from the FastAPI validation payload. Reproduction: POST /api/auth/register with an EmailStr-rejected TLD (e.g., @foo.test) → 422 → UI shows '[object Object]'. Mitigation: in /app/frontend/app/(auth)/register.tsx, when the API error is an object, extract err.detail?.[0]?.msg or JSON.stringify(err.detail) before setting the error state. Not iter4-scope, so main agent may defer."
+}

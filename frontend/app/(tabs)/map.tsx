@@ -7,6 +7,7 @@ import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 import { NativeMap, type NativeMapMarker } from '@/src/native-map';
 import { rideRecorder } from '@/src/ride-recorder';
+import { SosButton } from '@/src/sos';
 
 type Group = { group_id: string; name: string; member_count: number; invite_code: string };
 type Loc = { user_id: string; user_name: string; lat: number; lng: number; speed: number; heading: number };
@@ -125,6 +126,10 @@ export default function MapScreen() {
 
       <NativeMap markers={markers} />
 
+      <View pointerEvents="box-none" style={s.sosLayer}>
+        <SosButton testID="map-sos-button" />
+      </View>
+
       {!!statusMsg && (
         <View style={s.statusBanner} testID="ride-status-banner">
           <MaterialCommunityIcons name="information" size={14} color={colors.brand} />
@@ -199,4 +204,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.brand, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
   },
   broadcastText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '900', letterSpacing: 1 },
+  sosLayer: {
+    position: 'absolute', right: spacing.lg, bottom: 96 + spacing.lg,
+  },
 });

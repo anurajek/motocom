@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Platform, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
 import { colors, spacing, radius } from '@/src/theme';
 import { api, getToken } from '@/src/api';
 import { NativeMap, type NativeMapMarker } from '@/src/native-map';
@@ -21,6 +22,7 @@ export default function RideDetail() {
   const [points, setPoints] = useState<Point[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
 
@@ -83,6 +85,37 @@ export default function RideDetail() {
       setError(e?.message || 'Download failed');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const shareRide = async () => {
+    if (!id) return;
+    setSharing(true); setError(''); setMsg('');
+    try {
+      const res = await api<{ token: string; url: string }>(`/rides/${id}/share`, { method: 'POST' });
+      const publicUrl = res.url.replace('/api/public/rides/', '/api/public/ride/');
+      const shareText = `${ride?.name || 'My ride'} — ${ride?.distance_km.toFixed(1)} km on MotoCom: ${publicUrl}`;
+      if (Platform.OS === 'web') {
+        try {
+          if (typeof navigator !== 'undefined' && (navigator as any).share) {
+            await (navigator as any).share({ title: 'MotoCom ride', text: shareText, url: publicUrl });
+            setMsg('Share sheet opened.');
+          } else {
+            await Clipboard.setStringAsync(publicUrl);
+            setMsg('Public link copied to clipboard!');
+          }
+        } catch {
+          await Clipboard.setStringAsync(publicUrl);
+          setMsg('Public link copied to clipboard!');
+        }
+      } else {
+        await Share.share({ message: shareText, url: publicUrl });
+        setMsg('Share sheet opened.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Share failed');
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -188,6 +221,20 @@ export default function RideDetail() {
           )}
         </Pressable>
 
+        <Pressable
+          onPress={shareRide}
+          style={({ pressed }) => [s.secondaryBtn, pressed && { opacity: 0.85 }]}
+          disabled={sharing}
+          testID="share-ride-button"
+        >
+          {sharing ? <ActivityIndicator color={colors.brand} /> : (
+            <>
+              <MaterialCommunityIcons name="share-variant" size={18} color={colors.brand} />
+              <Text style={s.secondaryText}>SHARE RIDE</Text>
+            </>
+          )}
+        </Pressable>
+
         {points.length === 0 && (
           <Text style={s.footnote}>
             No GPS points recorded for this ride (probably a demo entry from `Log Ride`). Record a real ride from the Map tab (REC) to enable GPX export.
@@ -270,6 +317,13 @@ const s = StyleSheet.create({
     flexDirection: 'row', gap: spacing.sm,
   },
   primaryText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: '900', letterSpacing: 1.5 },
+  secondaryBtn: {
+    height: 48, borderRadius: radius.md, backgroundColor: 'transparent',
+    borderWidth: 1, borderColor: colors.brand,
+    alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: spacing.sm,
+  },
+  secondaryText: { color: colors.brand, fontSize: 13, fontWeight: '900', letterSpacing: 1 },
   btnProChip: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.sm,
     backgroundColor: 'rgba(0,0,0,0.25)',
