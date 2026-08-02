@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 5 — POST SDK 54 → 57 upgrade regression test. VERDICT: CLEAN. Backend: 55/55 pytest PASS (12s), zero regressions from the Node 20→22 / Expo 54→57 / RN 0.75→0.86 bump. Frontend: Web preview boots on https://intercom-hub-3.preview.emergentagent.com with zero red-screen, zero runtime errors, no missing-module warnings for expo-router / react-native-reanimated (4.5.1) / react-native-gesture-handler (2.32.0) / react-native-maps (1.27.2) / react-native-ble-plx (3.5.1) / native-map / ride-recorder / sos. Only 1 (non-critical) React Native web deprecation warning surfaced: 'props.pointerEvents is deprecated. Use style.pointerEvents' — this is a library-internal deprecation from a dependency under RN 0.86, not our app code. Regression flows re-verified end-to-end at 390x844: (1) login-screen renders; (2) register-screen → submit → dashboard-screen (Expo Router redirect from '/' → tabs works); (3) all 9 major screens load via deep-link routes and expose their testIDs: dashboard-screen, map-screen, ptt-screen, groups-screen, pair-screen, rides-screen, rider-pro-screen, heatmap-screen, profile-screen; (4) map-sos-button tap opens sos-sheet, sos-cancel-button dismisses cleanly; (5) record-ride-toggle and broadcast-location-button both present on map-screen (radar/REC control is 'record-ride-toggle', NOT 'map-rec-button' as review request wrote); (6) ptt-button responds to mouse-down/up press/release with no crash; (7) groups-screen tab renders (empty state 'No groups yet' — no seed data); (8) rides-screen loads without rides-error banner (API healthy); (9) rider-pro-screen renders full pricing UI ($4.99/month, 5 benefit rows, START 7-DAY FREE TRIAL button); (10) profile-screen → profile-delete-account-button opens delete-account-sheet → delete-cancel-button dismisses (no actual deletion confirmed). Authenticated flow validated with a freshly-registered example.com user. localStorage 'motocom_token' populated after register. TESTID CORRECTIONS to review request: 'map-rec-button' does NOT exist — actual is 'record-ride-toggle' (map.tsx:97); 'delete-account-button' does NOT exist — actual is 'profile-delete-account-button' (profile.tsx:95); delete sheet cancel testID is 'delete-cancel-button' (profile.tsx:129), not 'delete-account-cancel'. These are naming mismatches in the review request, not app defects.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "props.pointerEvents deprecation (RN 0.86 / react-native-web 0.21)",
+        "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' fires on multiple screens after the SDK 57 upgrade. Emitted from a dependency (not our app code — grepping frontend/src and frontend/app for 'pointerEvents=' returns nothing). Likely coming from @expo/vector-icons or expo-router internals under RN 0.86. Low priority — non-blocking. Reference: emitted while navigating any tab route on web preview."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_motocom_api.py",
+    "/app/backend/tests/test_iter2_new.py",
+    "/app/backend/tests/test_iter3_rides.py",
+    "/app/backend/tests/test_iter4_sos_share.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional, low priority) The 'props.pointerEvents is deprecated' warning originates from a third-party dependency under RN 0.86 (likely @expo/vector-icons or expo-router). Wait for upstream fix or pin to a patched version when available. No action needed for the user's phone (Expo Go SDK 57) — this is web-only noise.",
+    "(Carry-over from iter4, still not blocking) Fix register-error stringification for FastAPI 422 responses in /app/frontend/app/(auth)/register.tsx to render err.detail[0].msg instead of '[object Object]'."
+  ],
+  "critical_code_review_comments": [
+    "package.json is correctly aligned to SDK 57: expo ~57.0.0, expo-router ~57.0.9, react 19.2.3, react-native 0.86.2, react-native-reanimated 4.5.1 (new worklets engine 0.10.1 included), react-native-gesture-handler ~2.32.0, react-native-maps 1.27.2, react-native-ble-plx 3.5.1, expo-file-system ~57.0.1. All Expo modules are on the ~57 track. No deprecated packages (expo-av, expo-barcode-scanner, expo-background-fetch) present.",
+    "Node.js runtime confirmed at v22.23.2 (>= 22.13 required by SDK 57). supervisord shows expo pid running healthy uptime.",
+    "Metro bundle succeeds cleanly: 'Web Bundled 6742ms node_modules/expo-router/entry.js (1512 modules)' with no red errors. Subsequent incremental bundles complete in <100ms.",
+    "No app-code changes were required for the upgrade — regression proves the existing app/, src/, app/(auth)/, app/(tabs)/ code is forward-compatible with SDK 57.",
+    "Auth: localStorage key 'motocom_token' correctly set after /api/auth/register response; /api/me GET is fired background — pre-auth 401s are expected on the login screen and are silently swallowed.",
+    "Testing observability is good: every interactive element on regression-critical screens has a testID (verified for login, register, map SOS, PTT, profile delete-account, ride detail share/GPX). Two review-request testID names (map-rec-button, delete-account-button) do not exist — see summary for actual names."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (55/55)", "frontend": "100% (all regression flows load; SOS + delete-account modals interactive; no red-screen / no reanimated/gesture-handler/expo-router runtime errors)"},
+  "seed_data_creation": "Two ephemeral users registered during UI regression (reg57_<ts>@example.com and reg57b_<ts>@example.com) — auto-cleaned per preview DB policy. No manual cleanup needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "SDK 57 regression clean. If reproducing: (1) run pytest at /app/backend/tests/ — expect 55/55 in ~12s; (2) UI regression uses these exact testIDs: login-screen, show-email-login-button, go-register-button, register-name-input, register-email-input, register-password-input, register-submit-button, dashboard-screen, map-screen, map-sos-button, sos-sheet, sos-cancel-button, record-ride-toggle (NOT map-rec-button), broadcast-location-button, ptt-screen, ptt-button, groups-screen, pair-screen, rides-screen, rider-pro-screen, heatmap-screen, profile-screen, profile-delete-account-button (NOT delete-account-button), delete-account-sheet, delete-cancel-button (NOT delete-account-cancel). Register uses example.com TLD only (Pydantic EmailStr rejects .test). localStorage token key: 'motocom_token'. Home '/' redirects to '(tabs)/' via Expo Router 57 — dashboard-screen may briefly be False when navigating '/' if not yet redirected; wait ≥3s. 'props.pointerEvents is deprecated' warning is a dependency-level RN 0.86 issue, not an app bug.",
+  "rca_of_issue": "No regressions introduced by the SDK 54 → 57 upgrade. Node 22.23.2, Expo 57.0.9, RN 0.86.2, expo-router 57.0.9, reanimated 4.5.1, gesture-handler 2.32.0, ble-plx 3.5.1, maps 1.27.2 all bundle and run cleanly on web preview. Backend was unaffected (as expected — pure Node/Expo bump). The user's original error ('sdk54 need sdk57 in Expo Go') is resolved by the version bump itself; no app-code change was needed."
+}

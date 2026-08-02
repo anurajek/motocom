@@ -19,7 +19,10 @@
         "NSBluetoothPeripheralUsageDescription": "Connect to nearby intercom devices",
         "NSLocationWhenInUseUsageDescription": "Show your position on the group ride map",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Track your ride in the background",
-        "UIBackgroundModes": ["location", "bluetooth-central"]
+        "UIBackgroundModes": [
+          "location",
+          "bluetooth-central"
+        ]
       }
     },
     "android": {
@@ -72,10 +75,18 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["central"],
+          "modes": [
+            "central"
+          ],
           "bluetoothAlwaysPermission": "Scan and connect to your motorcycle intercom"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
