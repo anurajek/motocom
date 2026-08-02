@@ -12,7 +12,8 @@ export default function Profile() {
 
   const initials = (user?.name || user?.email || '?').slice(0, 2).toUpperCase();
 
-  const rows: { icon: any; label: string; onPress: () => void; testID: string }[] = [
+  const rows: { icon: any; label: string; onPress: () => void; testID: string; badge?: string }[] = [
+    { icon: 'crown', label: 'Rider Pro', onPress: () => router.push('/rider-pro'), testID: 'profile-riderpro-row', badge: 'UPGRADE' },
     { icon: 'bluetooth', label: 'Paired Intercoms', onPress: () => router.push('/pair'), testID: 'profile-pair-row' },
     { icon: 'account-group', label: 'My Groups', onPress: () => router.push('/(tabs)/groups'), testID: 'profile-groups-row' },
     { icon: 'map-marker-radius', label: 'Live Map', onPress: () => router.push('/(tabs)/map'), testID: 'profile-map-row' },
@@ -56,6 +57,11 @@ export default function Profile() {
               <MaterialCommunityIcons name={r.icon} size={20} color={colors.brand} />
             </View>
             <Text style={s.rowLabel}>{r.label}</Text>
+            {r.badge && (
+              <View style={s.rowBadge}>
+                <Text style={s.rowBadgeText}>{r.badge}</Text>
+              </View>
+            )}
             <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceTertiary} />
           </Pressable>
         ))}
@@ -113,6 +119,11 @@ const s = StyleSheet.create({
     backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center',
   },
   rowLabel: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '700' },
+  rowBadge: {
+    paddingHorizontal: spacing.sm, paddingVertical: 4,
+    backgroundColor: colors.brand, borderRadius: radius.sm,
+  },
+  rowBadgeText: { color: colors.onBrandPrimary, fontSize: 10, fontWeight: '900', letterSpacing: 1 },
   signOut: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
     marginTop: spacing.xl, paddingVertical: spacing.md,

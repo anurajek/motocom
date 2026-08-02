@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 2 testing complete. Backend: 26/27 pytest PASS. New endpoints /api/rides/track (auto-create + append + stats), /api/rides/{id}/points (asc by ts, user-scoped, no _id leak), /api/billing/status (defaults is_pro:false), /api/billing/webhook (invalid sig → 400) all PASS. Regression suite (19 tests from iter1) all PASS. ONE BACKEND BUG FOUND: /api/billing/checkout-session returns HTTP 500 (crash) instead of 400/503 when Stripe is placeholder-configured — this violates the explicit acceptance criteria. Root cause: guard at server.py:636 only checks empty strings, but .env holds non-empty placeholder values ('sk_test_emergent'/'price_placeholder'), so control falls through to stripe.checkout.Session.create which raises AuthenticationError uncaught → FastAPI returns 500. Frontend: register→dashboard works. Pair screen shows SIM badge on web, Start Scan streams simulated devices, PAIR marks device CONNECTED. Map tab renders radar-grid fallback (native-map.web.tsx) and shows Broadcast + active-riders-count. REC button (record-ride-toggle) starts recording and shows 'Recording started · GPS active' banner (browser geolocation on web worked in test env). Groups: create-group-open-button opens modal (name field is 'new-group-name-input', submit is 'confirm-create-group-button'). Profile → Rider Pro row navigates to /rider-pro (rider-pro-screen), shows hero, $4.99, 7-DAY FREE TRIAL text, 5 perk rows, start-trial-button. Tapping the trial button DOES surface the rider-pro-error banner with 'Error 500' — no client crash — meeting the front-end acceptance criterion, but the underlying backend HTTP status is 500 (not 503). PTT screen loads, sign out works. Deprecated packages detected: none new in iter2 (still shadow* → boxShadow warning and props.pointerEvents warning from iter1).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/billing/checkout-session", "issue": "Returns HTTP 500 (Internal Server Error) crash instead of the required 400/503 clean error when Stripe is placeholder-configured. The guard at server.py:636 (`if not STRIPE_SECRET_KEY or not STRIPE_RIDER_PRO_PRICE_ID`) does NOT trip because both env vars contain non-empty placeholder strings ('sk_test_emergent' / 'price_placeholder'). Control reaches stripe.checkout.Session.create(...) which raises stripe._error.AuthenticationError('Invalid API Key provided: sk_test_****gent'); no try/except → FastAPI converts it to 500. Fix options: (1) treat known placeholders as unconfigured, e.g. `if STRIPE_SECRET_KEY in (None,'','sk_test_emergent') or STRIPE_RIDER_PRO_PRICE_ID in (None,'','price_placeholder'): raise HTTPException(503, 'Stripe not configured...')`, OR (2) wrap `session = stripe.checkout.Session.create(...)` in `try/except stripe.error.StripeError as e: raise HTTPException(503, f'Stripe error: {e.user_message or str(e)}')`. Recommended: do both.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Rider Pro → Start Trial", "issue": "The error banner correctly appears and prevents a client crash, but message shown is only 'Error 500' because backend returns bare 500 with no detail. Once backend fix returns 503 with detail (e.g. 'Stripe not configured...'), the same banner will display the user-friendly message automatically (rider-pro.tsx already uses e?.message).", "affected_testIDs": ["start-trial-button", "rider-pro-error"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles (multiple screens)", "issue": "Console warning still present: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Carried over from iter1. Reference: grep shadowColor/shadowOffset/shadowOpacity/shadowRadius in /app/frontend/app/** and /app/frontend/src/**."},
+      {"component": "props.pointerEvents", "issue": "Console warning still present: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Carried over from iter1."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_motocom_api.py",
+    "/app/backend/tests/test_iter2_new.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Fix /api/billing/checkout-session to return 503 (or 400) with a clear error detail when Stripe is not properly configured. Detect the placeholder values 'sk_test_emergent' and 'price_placeholder' explicitly, AND wrap the stripe.checkout.Session.create call in try/except stripe.error.StripeError to convert any future Stripe API errors into a clean 503 response. See RCA in backend_issues.critical for exact fix.",
+    "(Optional carry-over) Migrate shadow* style props to boxShadow and move pointerEvents from prop to style.pointerEvents to silence RN-web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py:634-662 — checkout-session lacks try/except around Stripe SDK call; any Stripe SDK error will bubble as 500. Add stripe.error.StripeError handling.",
+    "server.py:636 — placeholder detection is not robust; using `not STRIPE_SECRET_KEY` won't catch non-empty placeholder strings. Consider an explicit dev-placeholder list.",
+    "server.py:606-609 — GET /rides/{ride_id}/points correctly filters by user_id (verified in test_get_ride_points_ordered_and_scoped — user B gets empty list for user A's ride).",
+    "server.py:558-603 — /rides/track auto-creates ride when ride_id missing, appends on subsequent calls, and recomputes distance/duration/top_speed via haversine. Works as specified."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter2_new.py (new — 10 test cases for iter2 endpoints)"
+  ],
+  "success_rate": {"backend": "96% (26/27)", "frontend": "100% (all specified user flows work; only downstream 500 surfaces as an error banner as designed)"},
+  "seed_data_creation": "Ephemeral test users created via /api/auth/register with emails test_a_<hex>@motocom-test.com / test_b_<hex>@motocom-test.com / itest_<hex>@motocom-test.com. Test rides auto-created via /rides/track. All isolated per-run; no cleanup needed on preview DB.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend: https://intercom-hub-3.preview.emergentagent.com/api. Stripe keys are placeholders — the only known bug is /api/billing/checkout-session returning 500. After main agent fix, retest with: `pytest /app/backend/tests/test_iter2_new.py::TestBilling -v`. Frontend testIDs: rider-pro-screen, start-trial-button, rider-pro-error, record-ride-toggle, ride-status-banner, active-riders-count, broadcast-location-button, pair-screen, start-scan-button, connect-<device_id>, saved-device-<id>, profile-riderpro-row, profile-signout-button, logout-button (dashboard), open-groups-button, create-group-open-button, new-group-name-input, confirm-create-group-button. Dashboard logout is testID 'logout-button' AND 'profile-signout-button' (both work). Do NOT use page.goto to re-navigate after login — the app gets stuck on a loading spinner; use in-app navigation (dashboard buttons / router back). Google OAuth button MUST NOT be clicked.",
+  "rca_of_issue": "Bug: POST /api/billing/checkout-session returns 500 instead of 503 when Stripe misconfigured. Reproduction: (1) POST to /api/billing/checkout-session with valid auth token and `{\"return_url\": \"https://intercom-hub-3.preview.emergentagent.com/rider-pro\"}` while STRIPE_SECRET_KEY=sk_test_emergent and STRIPE_RIDER_PRO_PRICE_ID=price_placeholder. (2) Observe 500 Internal Server Error in response and stripe._error.AuthenticationError in /var/log/supervisor/backend.err.log. Root cause: server.py:636 guard `if not STRIPE_SECRET_KEY or not STRIPE_RIDER_PRO_PRICE_ID` evaluates False because both env vars are non-empty strings. Execution proceeds to stripe.checkout.Session.create at line 648 which authenticates with the fake key and raises AuthenticationError that is not caught. FastAPI's default handler converts unhandled exceptions to HTTP 500. Mitigation: explicitly detect known placeholder values and/or wrap the Stripe SDK call in try/except stripe.error.StripeError → raise HTTPException(503, detail). See action_items[0]."
+}

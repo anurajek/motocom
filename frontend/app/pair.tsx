@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius } from '@/src/theme';
 import { api } from '@/src/api';
+import { createBle, type BleController, type ScanResult } from '@/src/ble';
 
 type Device = {
   id: string;
@@ -17,87 +18,67 @@ type Device = {
   rssi: number;
 };
 
-type ScanItem = {
-  device_id: string;
-  name: string;
-  brand: string;
-  rssi: number;
-};
-
-const BRANDS = [
-  { brand: 'Sena', prefixes: ['50S', '30K', 'SF4', 'Spider ST1'] },
-  { brand: 'Cardo', prefixes: ['Packtalk Edge', 'Freecom 4x', 'Spirit HD'] },
-  { brand: 'UClear', prefixes: ['Motion 6', 'AMP Pro'] },
-  { brand: 'Interphone', prefixes: ['U-COM 16', 'Tour'] },
-  { brand: 'Midland', prefixes: ['BT Next Pro', 'BTX2 Pro'] },
-  { brand: 'Generic', prefixes: ['BT Intercom', 'Helmet BT'] },
-];
-
-function makeMockScan(count = 5): ScanItem[] {
-  const items: ScanItem[] = [];
-  const used = new Set<string>();
-  while (items.length < count) {
-    const b = BRANDS[Math.floor(Math.random() * BRANDS.length)];
-    const p = b.prefixes[Math.floor(Math.random() * b.prefixes.length)];
-    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-    const key = `${b.brand}-${p}-${suffix}`;
-    if (used.has(key)) continue;
-    used.add(key);
-    items.push({
-      device_id: `BT-${suffix}${Math.floor(Math.random() * 999)}`,
-      name: `${p} ${suffix}`,
-      brand: b.brand,
-      rssi: -1 * (30 + Math.floor(Math.random() * 60)),
-    });
-  }
-  return items.sort((a, b) => b.rssi - a.rssi);
-}
-
 export default function Pair() {
   const router = useRouter();
   const [scanning, setScanning] = useState(false);
-  const [discovered, setDiscovered] = useState<ScanItem[]>([]);
+  const [discovered, setDiscovered] = useState<ScanResult[]>([]);
   const [saved, setSaved] = useState<Device[]>([]);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [mode, setMode] = useState<'native' | 'simulated'>('simulated');
+  const bleRef = useRef<BleController | null>(null);
   const pulse = useSharedValue(0);
 
   useEffect(() => {
     pulse.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.out(Easing.ease) }), -1, false);
   }, [pulse]);
 
-  const loadSaved = useCallback(async () => {
-    try {
-      const d = await api<Device[]>('/devices');
-      setSaved(d);
-    } catch {}
+  useEffect(() => {
+    (async () => {
+      const b = await createBle();
+      bleRef.current = b;
+      setMode(b.mode);
+    })();
+    return () => { bleRef.current?.stop().catch(() => {}); };
   }, []);
 
+  const loadSaved = useCallback(async () => {
+    try { setSaved(await api<Device[]>('/devices')); } catch {}
+  }, []);
   useEffect(() => { loadSaved(); }, [loadSaved]);
 
-  const startScan = () => {
-    setScanning(true);
+  const startScan = async () => {
+    setError('');
     setDiscovered([]);
-    // Simulate progressive discovery
-    let count = 0;
-    const iv = setInterval(() => {
-      count++;
-      setDiscovered((prev) => {
-        const next = makeMockScan(Math.min(prev.length + 1, 6));
-        return next;
+    setScanning(true);
+    try {
+      const set = new Set<string>();
+      await bleRef.current!.start((r) => {
+        if (set.has(r.device_id)) return;
+        set.add(r.device_id);
+        setDiscovered((prev) => [...prev, r].sort((a, b) => b.rssi - a.rssi));
       });
-      if (count >= 5) {
-        clearInterval(iv);
+      // Auto stop after 10s
+      setTimeout(async () => {
+        await bleRef.current?.stop();
         setScanning(false);
-      }
-    }, 700);
+      }, 10000);
+    } catch (e: any) {
+      setError(e?.message || 'Scan failed');
+      setScanning(false);
+    }
   };
 
-  const connect = async (item: ScanItem) => {
+  const stopScan = async () => {
+    await bleRef.current?.stop();
+    setScanning(false);
+  };
+
+  const connect = async (item: ScanResult) => {
     setConnecting(item.device_id);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     try {
-      // Simulate 1.5s handshake
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1200));
       await api('/devices', {
         method: 'POST',
         body: JSON.stringify({
@@ -117,17 +98,10 @@ export default function Pair() {
   };
 
   const toggle = async (dev: Device) => {
-    try {
-      await api(`/devices/${dev.id}/toggle`, { method: 'POST' });
-      await loadSaved();
-    } catch {}
+    try { await api(`/devices/${dev.id}/toggle`, { method: 'POST' }); await loadSaved(); } catch {}
   };
-
   const remove = async (dev: Device) => {
-    try {
-      await api(`/devices/${dev.id}`, { method: 'DELETE' });
-      await loadSaved();
-    } catch {}
+    try { await api(`/devices/${dev.id}`, { method: 'DELETE' }); await loadSaved(); } catch {}
   };
 
   const pulseStyle = useAnimatedStyle(() => ({
@@ -135,13 +109,7 @@ export default function Pair() {
     opacity: (1 - pulse.value) * 0.7,
   }));
 
-  const activeDevice = saved.find((d) => d.connected);
-
-  const signalIcon = (rssi: number) => {
-    if (rssi > -50) return 'signal-cellular-3';
-    if (rssi > -70) return 'signal-cellular-2';
-    return 'signal-cellular-1';
-  };
+  const signalIcon = (rssi: number) => (rssi > -50 ? 'signal-cellular-3' : rssi > -70 ? 'signal-cellular-2' : 'signal-cellular-1');
 
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom']} testID="pair-screen">
@@ -151,27 +119,34 @@ export default function Pair() {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={s.title}>PAIR INTERCOM</Text>
-          <Text style={s.sub}>Multi-brand Bluetooth device manager</Text>
+          <Text style={s.sub}>
+            {mode === 'native' ? 'Real Bluetooth scanning' : 'Simulated scan (dev build for real BLE)'}
+          </Text>
+        </View>
+        <View style={[s.modeBadge, { borderColor: mode === 'native' ? colors.success : colors.warning }]}>
+          <Text style={[s.modeBadgeText, { color: mode === 'native' ? colors.success : colors.warning }]}>
+            {mode === 'native' ? 'BLE' : 'SIM'}
+          </Text>
         </View>
       </View>
 
-      {/* Radar / scan area */}
       <View style={s.radarBox}>
         {scanning && <Animated.View style={[s.radarPulse, pulseStyle]} />}
         <View style={s.radarCore}>
           <MaterialCommunityIcons name="bluetooth" size={36} color={colors.onBrandPrimary} />
         </View>
         <Text style={s.scanLabel}>
-          {scanning ? 'SCANNING NEARBY DEVICES...' : discovered.length ? 'DEVICES FOUND' : 'READY TO SCAN'}
+          {scanning ? 'SCANNING NEARBY DEVICES...' : discovered.length ? `${discovered.length} DEVICE${discovered.length === 1 ? '' : 'S'} FOUND` : 'READY TO SCAN'}
         </Text>
+        {!!error && <Text style={s.errorText}>{error}</Text>}
         <Pressable
-          onPress={startScan}
-          disabled={scanning}
-          style={({ pressed }) => [s.scanBtn, pressed && { opacity: 0.85 }, scanning && { opacity: 0.5 }]}
+          onPress={scanning ? stopScan : startScan}
+          style={({ pressed }) => [s.scanBtn, pressed && { opacity: 0.85 }]}
           testID="start-scan-button"
         >
-          {scanning ? <ActivityIndicator color={colors.onBrandPrimary} /> :
-            <Text style={s.scanBtnText}>{discovered.length ? 'SCAN AGAIN' : 'START SCAN'}</Text>}
+          {scanning
+            ? <><ActivityIndicator color={colors.onBrandPrimary} /><Text style={s.scanBtnText}>  STOP</Text></>
+            : <Text style={s.scanBtnText}>{discovered.length ? 'SCAN AGAIN' : 'START SCAN'}</Text>}
         </Pressable>
       </View>
 
@@ -179,7 +154,6 @@ export default function Pair() {
         data={discovered}
         keyExtractor={(i) => i.device_id}
         contentContainerStyle={s.list}
-        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={() => (
           <>
             {saved.length > 0 && (
@@ -254,7 +228,12 @@ const s = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center',
   },
   title: { color: colors.onSurface, fontSize: 20, fontWeight: '900', letterSpacing: 1 },
-  sub: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
+  sub: { color: colors.onSurfaceSecondary, fontSize: 11, marginTop: 2 },
+  modeBadge: {
+    paddingHorizontal: spacing.sm, paddingVertical: 4,
+    borderRadius: radius.sm, borderWidth: 1,
+  },
+  modeBadgeText: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
 
   radarBox: {
     alignItems: 'center', justifyContent: 'center',
@@ -270,12 +249,12 @@ const s = StyleSheet.create({
   radarCore: {
     width: 80, height: 80, borderRadius: 40, backgroundColor: colors.brand,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: colors.brand, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 20,
   },
   scanLabel: { color: colors.onSurfaceSecondary, fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  errorText: { color: colors.error, fontSize: 12, textAlign: 'center' },
   scanBtn: {
     height: 48, paddingHorizontal: spacing.xl, borderRadius: radius.md,
-    backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center', flexDirection: 'row',
   },
   scanBtnText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '900', letterSpacing: 1.5 },
 

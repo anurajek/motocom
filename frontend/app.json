@@ -1,16 +1,26 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "MotoCom",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "motocom",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.intercomhub.voo4l3"
+      "bundleIdentifier": "com.emergent.intercomhub.voo4l3",
+      "config": {
+        "googleMapsApiKey": "REPLACE_WITH_YOUR_GOOGLE_MAPS_IOS_KEY"
+      },
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Scan and connect to your motorcycle intercom",
+        "NSBluetoothPeripheralUsageDescription": "Connect to nearby intercom devices",
+        "NSLocationWhenInUseUsageDescription": "Show your position on the group ride map",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Track your ride in the background",
+        "UIBackgroundModes": ["location", "bluetooth-central"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +28,21 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.intercomhub.voo4l3"
+      "package": "com.emergent.intercomhub.voo4l3",
+      "config": {
+        "googleMaps": {
+          "apiKey": "REPLACE_WITH_YOUR_GOOGLE_MAPS_ANDROID_KEY"
+        }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -34,6 +58,22 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#000000"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Track your ride in the background",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["central"],
+          "bluetoothAlwaysPermission": "Scan and connect to your motorcycle intercom"
         }
       ]
     ],

@@ -12,6 +12,10 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
 import httpx
+import stripe
+from urllib.parse import quote
+from fastapi import Request
+from fastapi.responses import HTMLResponse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -23,6 +27,14 @@ db = client[os.environ['DB_NAME']]
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGO = "HS256"
 JWT_DAYS = 30
+
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_RIDER_PRO_PRICE_ID = os.environ.get("STRIPE_RIDER_PRO_PRICE_ID", "")
+STRIPE_PUBLIC_API_URL = os.environ.get("STRIPE_PUBLIC_API_URL", "").rstrip("/")
+APP_SCHEME = os.environ.get("APP_SCHEME", "motocom")
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -171,6 +183,32 @@ class RideOut(BaseModel):
 
 class JoinGroupIn(BaseModel):
     invite_code: str
+
+
+class LocationPoint(BaseModel):
+    lat: float
+    lng: float
+    speed: Optional[float] = 0
+    heading: Optional[float] = 0
+    timestamp: Optional[float] = None
+
+
+class TrackBatch(BaseModel):
+    ride_id: Optional[str] = None
+    group_id: Optional[str] = None
+    name: Optional[str] = None
+    points: List[LocationPoint] = []
+
+
+class CheckoutInput(BaseModel):
+    return_url: str
+
+
+class BillingStatus(BaseModel):
+    is_pro: bool
+    status: Optional[str] = None
+    cancel_at_period_end: bool = False
+    current_period_end: Optional[int] = None
 
 
 # ============= Auth Dep =============
@@ -515,6 +553,217 @@ async def create_ride(body: RideIn, user=Depends(get_current_user)):
 async def my_rides(user=Depends(get_current_user)):
     rows = await db.rides.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return [RideOut(**r) for r in rows]
+
+
+@api_router.post("/rides/track")
+async def track_ride(body: TrackBatch, user=Depends(get_current_user)):
+    """Upload a batch of GPS points from background tracking. Optionally attach to a ride."""
+    ride_id = body.ride_id
+    if not ride_id:
+        # Auto-create a ride from the first point
+        ride = {
+            "ride_id": new_id("rid"),
+            "user_id": user["user_id"],
+            "name": body.name or f"Ride {now_utc().strftime('%b %d, %H:%M')}",
+            "distance_km": 0.0,
+            "duration_min": 0,
+            "group_id": body.group_id,
+            "top_speed": 0.0,
+            "created_at": now_utc(),
+        }
+        await db.rides.insert_one(ride)
+        ride_id = ride["ride_id"]
+
+    if body.points:
+        docs = [{
+            "ride_id": ride_id,
+            "user_id": user["user_id"],
+            "lat": p.lat,
+            "lng": p.lng,
+            "speed": p.speed or 0,
+            "heading": p.heading or 0,
+            "ts": p.timestamp or now_utc().timestamp(),
+        } for p in body.points]
+        await db.ride_points.insert_many(docs)
+
+    # Recompute simple stats
+    points = await db.ride_points.find({"ride_id": ride_id}, {"_id": 0}).sort("ts", 1).to_list(10000)
+    total_km = 0.0
+    top_speed = 0.0
+    for i in range(1, len(points)):
+        a, b = points[i - 1], points[i]
+        total_km += _haversine_km(a["lat"], a["lng"], b["lat"], b["lng"])
+        top_speed = max(top_speed, b.get("speed", 0))
+    if points:
+        dur = max(1, int((points[-1]["ts"] - points[0]["ts"]) / 60))
+        await db.rides.update_one(
+            {"ride_id": ride_id},
+            {"$set": {"distance_km": round(total_km, 2), "duration_min": dur, "top_speed": round(top_speed, 1)}},
+        )
+    return {"ride_id": ride_id, "points": len(points), "distance_km": round(total_km, 2)}
+
+
+@api_router.get("/rides/{ride_id}/points")
+async def get_ride_points(ride_id: str, user=Depends(get_current_user)):
+    rows = await db.ride_points.find({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0}).sort("ts", 1).to_list(10000)
+    return rows
+
+
+# ============= Billing (Stripe) =============
+def _allowed_return_url(value: str) -> str:
+    if not value:
+        raise HTTPException(400, "Missing return_url")
+    if value.startswith(f"{APP_SCHEME}://") or value.startswith("http://localhost") or value.endswith("/stripe-return") or "preview.emergentagent.com" in value:
+        return value
+    raise HTTPException(400, "Invalid return URL")
+
+
+@api_router.get("/billing/status", response_model=BillingStatus)
+async def billing_status(user=Depends(get_current_user)):
+    rec = await db.subscriptions.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if not rec:
+        return BillingStatus(is_pro=False)
+    return BillingStatus(
+        is_pro=bool(rec.get("is_pro")),
+        status=rec.get("status"),
+        cancel_at_period_end=bool(rec.get("cancel_at_period_end")),
+        current_period_end=rec.get("current_period_end"),
+    )
+
+
+@api_router.post("/billing/checkout-session")
+async def create_checkout_session(body: CheckoutInput, request: Request, user=Depends(get_current_user)):
+    if not STRIPE_SECRET_KEY or not STRIPE_RIDER_PRO_PRICE_ID:
+        raise HTTPException(503, "Stripe not configured. Set STRIPE_SECRET_KEY and STRIPE_RIDER_PRO_PRICE_ID.")
+
+    existing = await db.subscriptions.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if existing and existing.get("is_pro"):
+        raise HTTPException(409, "Already subscribed")
+
+    return_url = _allowed_return_url(body.return_url)
+    base = STRIPE_PUBLIC_API_URL or str(request.base_url).rstrip("/")
+    success = f"{base}/api/billing/success?session_id={{CHECKOUT_SESSION_ID}}&return_url={quote(return_url, safe='')}"
+    cancel = f"{base}/api/billing/cancel-page?return_url={quote(return_url, safe='')}"
+
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        line_items=[{"price": STRIPE_RIDER_PRO_PRICE_ID, "quantity": 1}],
+        success_url=success,
+        cancel_url=cancel,
+        customer_email=user.get("email"),
+        payment_method_collection="always",
+        subscription_data={
+            "trial_period_days": 7,
+            "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
+            "metadata": {"user_id": user["user_id"], "plan": "rider_pro"},
+        },
+        metadata={"user_id": user["user_id"], "plan": "rider_pro"},
+    )
+    return {"url": session.url}
+
+
+@api_router.post("/billing/cancel")
+async def cancel_subscription(user=Depends(get_current_user)):
+    rec = await db.subscriptions.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if not rec or not rec.get("stripe_subscription_id"):
+        raise HTTPException(404, "No subscription")
+    sub = stripe.Subscription.modify(rec["stripe_subscription_id"], cancel_at_period_end=True)
+    await db.subscriptions.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"cancel_at_period_end": True}},
+    )
+    return {"cancel_at_period_end": sub.cancel_at_period_end, "current_period_end": sub.current_period_end}
+
+
+@api_router.post("/billing/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+    except Exception:
+        raise HTTPException(400, "Invalid Stripe webhook signature")
+
+    event_id = event["id"]
+    try:
+        await db.stripe_events.insert_one({"event_id": event_id, "type": event["type"], "created_at": now_utc()})
+    except Exception:
+        return {"received": True, "duplicate": True}
+
+    obj = event["data"]["object"]
+    et = event["type"]
+
+    if et == "checkout.session.completed":
+        user_id = (obj.get("metadata") or {}).get("user_id")
+        subscription_id = obj.get("subscription")
+        if user_id and subscription_id:
+            await db.subscriptions.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "user_id": user_id,
+                    "stripe_customer_id": obj.get("customer"),
+                    "stripe_subscription_id": subscription_id,
+                }},
+                upsert=True,
+            )
+    elif et.startswith("customer.subscription."):
+        subscription_id = obj["id"]
+        user_id = (obj.get("metadata") or {}).get("user_id")
+        if not user_id:
+            prior = await db.subscriptions.find_one({"stripe_subscription_id": subscription_id}, {"_id": 0})
+            user_id = prior and prior.get("user_id")
+        status = obj.get("status")
+        is_pro = status in ("trialing", "active")
+        if user_id:
+            await db.subscriptions.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "stripe_subscription_id": subscription_id,
+                    "status": status,
+                    "is_pro": is_pro,
+                    "cancel_at_period_end": obj.get("cancel_at_period_end", False),
+                    "current_period_end": obj.get("current_period_end"),
+                    "updated_at": now_utc(),
+                }},
+                upsert=True,
+            )
+            await db.users.update_one({"user_id": user_id}, {"$set": {"is_pro": is_pro}})
+
+    return {"received": True}
+
+
+@app.get("/api/billing/success", response_class=HTMLResponse)
+async def billing_success(session_id: str, return_url: str):
+    return_url = _allowed_return_url(return_url)
+    target = f"{return_url}?session_id={quote(session_id, safe='')}&status=success"
+    return HTMLResponse(
+        f"<!doctype html><html><body style='background:#111;color:#fff;font-family:system-ui;text-align:center;padding:40px'>"
+        f"<h2>Rider Pro activated</h2><p>Returning to the app…</p>"
+        f"<script>location.replace({target!r})</script>"
+        f"<p><a href='{target}' style='color:#FF5E00'>Continue</a></p></body></html>"
+    )
+
+
+@app.get("/api/billing/cancel-page", response_class=HTMLResponse)
+async def billing_cancel_page(return_url: str):
+    return_url = _allowed_return_url(return_url)
+    target = f"{return_url}?status=cancel"
+    return HTMLResponse(
+        f"<!doctype html><html><body style='background:#111;color:#fff;font-family:system-ui;text-align:center;padding:40px'>"
+        f"<h2>Checkout canceled</h2>"
+        f"<script>location.replace({target!r})</script>"
+        f"<p><a href='{target}' style='color:#FF5E00'>Return</a></p></body></html>"
+    )
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    import math
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 
 @api_router.get("/")
