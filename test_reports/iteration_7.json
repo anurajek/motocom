@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 7 — Post cache-clear packager health check after the user reported 'packager is not running' following the SDK 54→57 upgrade + app.json edits. VERDICT: PACKAGER FULLY HEALTHY, ZERO REGRESSION. (1) Supervisor: expo RUNNING (pid 22795, restarted cleanly). (2) Web preview https://intercom-hub-3.preview.emergentagent.com returns HTTP 200 and renders login-screen at 390x844. (3) Metro manifest endpoint returns valid JSON for BOTH iOS and Android — verified fields id (UUID), runtimeVersion='1.0.0' (correctly resolved from policy=appVersion), launchAsset.url pointing to node_modules/expo-router/entry.bundle with the expected query string (platform, dev, hot, lazy, transform.engine=hermes, transform.routerRoot=app). extra.expoClient echoes updates.enabled=false and runtimeVersion.policy=appVersion — confirming Expo is reading the updated app.json. (4) Frontend regression: registered reg_iter7_1785679957@example.com via login→show-email-login-button→go-register-button→register form (dashboard reached). Route regression: dashboard-screen, map-screen, ptt-screen, groups-screen, pair-screen, rides-screen, rider-pro-screen, profile-screen all visible=True. (5) Post-cache-clear runtime hygiene: 0 console errors, 0 page errors, 0 red-screen, 0 messages containing 'expo-updates', 'runtimeVersion', 'cannot find module', 'unable to resolve', 'expo-router/entry', or 'module not found' — confirming no stale module references or SDK-57 post-upgrade artifacts leaked through the cache clear. (6) Backend pytest: 55/55 PASS in 12.19s (parallel gw0/gw1, JUnit XML written). No mocked APIs were exercised (Stripe/BLE/Maps radar all remain as-is per spec).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_motocom_api.py",
+    "/app/backend/tests/test_iter2_new.py",
+    "/app/backend/tests/test_iter3_rides.py",
+    "/app/backend/tests/test_iter4_sos_share.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(No new action required from cache clear.) Metro packager is healthy, manifests are being served, and the app boots cleanly. The user can safely re-open Expo Go on device — the 'packager is not running' error should be resolved. If the device still reports it, ask the user to force-quit Expo Go, ensure the device is on the same tunnel (EXPO_TUNNEL_SUBDOMAIN=intercom-hub-3), and re-scan the QR from the running expo process. No app-code fix needed.",
+    "(Carry-over from iter4/iter5/iter6, not blocking) register-error stringification in /app/frontend/app/(auth)/register.tsx should render err.detail[0].msg for FastAPI 422 responses instead of '[object Object]'.",
+    "(Carry-over from iter5/iter6, cosmetic) 'props.pointerEvents is deprecated' warning from dependency internals under RN 0.86 — upstream fix pending."
+  ],
+  "critical_code_review_comments": [
+    "app.json is well-formed for SDK 57: runtimeVersion.policy='appVersion' correctly resolves to '1.0.0' (verified in manifest response), updates.enabled=false is valid off-switch, no expo-updates package required in package.json — zero-risk.",
+    "The manifest served on port 3000 confirms Metro is fully hydrated: launchAsset.url uses hermes+bytecode transforms and expo-router entry point, which matches SDK 57 defaults.",
+    "Backend untouched from iter6 — 55/55 pytest continues to pass in ~12s (parallel gw0/gw1).",
+    "No new test-script edits or app-code edits were required — this iteration was pure verification."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (55/55)", "frontend": "100% (login+register+dashboard+7 auth-gated screens; iOS+Android manifests valid; 0 console errors; 0 SDK-57 post-upgrade artifacts)"},
+  "seed_data_creation": "One ephemeral user reg_iter7_1785679957@example.com registered for auth-gated route verification. Auto-cleaned per preview DB policy.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Packager is healthy post cache-clear. Both iOS and Android manifests are served correctly on port 3000 (fields verified: id/runtimeVersion=1.0.0/launchAsset.url). All testIDs remain unchanged from iter6: login-screen, show-email-login-button, go-register-button, register-screen, register-{name,email,password,submit}-{input,button}, dashboard-screen, map-screen, ptt-screen, groups-screen, pair-screen, rides-screen, rider-pro-screen, profile-screen, map-sos-button, sos-sheet, sos-cancel-button, record-ride-toggle, profile-delete-account-button, delete-account-sheet, delete-cancel-button. Register uses example.com TLD only. To reach register: click show-email-login-button THEN go-register-button (the earlier assumption of a top-level login-goto-register was wrong). Backend 55/55 pytest ~12s.",
+  "rca_of_issue": "Reported issue: 'packager is not running'. Root cause was stale Metro/Expo cache after the SDK 54→57 upgrade combined with subsequent app.json changes (added expo.updates.enabled=false, expo.runtimeVersion.policy=appVersion). The stale cache still referenced SDK-54 module resolutions and pre-updates.enabled config, causing the on-device Expo Go client to mismatch the served manifest. Fix (already applied by main agent): (a) sudo supervisorctl stop expo, (b) rm -rf frontend/.metro-cache frontend/.expo frontend/node_modules/.cache, (c) sudo supervisorctl start expo. Verification (this iteration): Metro now bundles cleanly (1512 modules per main agent), supervisor uptime confirmed at pid 22795, both iOS and Android manifest endpoints return valid JSON with runtimeVersion=1.0.0 and correct launchAsset.url, web preview is 200-healthy, and no cache-leftover keywords (expo-updates/runtimeVersion/module-resolution errors) appear in the browser console after full app traversal. Mitigation is complete from the app side. Next preventive action: after any SDK bump or app.json edit that touches updates/runtimeVersion, immediately clear .metro-cache + .expo + node_modules/.cache and restart the expo supervisor before asking the user to reload Expo Go."
+}
