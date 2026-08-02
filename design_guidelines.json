@@ -1,0 +1,192 @@
+{
+  "app_name": "MotoCom",
+  "personality": "7 Dark-First Utility DARK",
+  "personality_one_liner": "A fast, high-contrast, adventure-ready command center for motorcyclists, prioritizing live tracking, push-to-talk, and glanceable metrics over aesthetics.",
+  "color": {
+    "surface": "#111111",
+    "onSurface": "#F5F5F5",
+    "surfaceSecondary": "#1C1C1C",
+    "onSurfaceSecondary": "#A3A3A3",
+    "surfaceTertiary": "#292929",
+    "onSurfaceTertiary": "#888888",
+    "surfaceInverse": "#EAEAEA",
+    "onSurfaceInverse": "#000000",
+    "brand": "#FF5E00",
+    "brandPrimary": "#FF5E00",
+    "onBrandPrimary": "#000000",
+    "brandSecondary": "#D44E00",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#3D1A00",
+    "onBrandTertiary": "#FF7A29",
+    "success": "#32D74B",
+    "onSuccess": "#000000",
+    "warning": "#FFD60A",
+    "onWarning": "#000000",
+    "error": "#FF3B30",
+    "onError": "#FFFFFF",
+    "info": "#C7C7CC",
+    "onInfo": "#000000",
+    "border": "#2C2C2E",
+    "borderStrong": "#3A3A3C",
+    "divider": "#1C1C1E"
+  },
+  "typography": {
+    "displayFontFamily": "Barlow",
+    "textFontFamily": "Manrope",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Avoid decorative whitespace. Dense, logical grouping for fast scanning during a ride. Use larger margins only for touch targets (glove-friendly).",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "MaterialCommunityIcons",
+  "glassmorphism": {
+    "enabled": "false",
+    "do's": [],
+    "dont's": [
+      "No blur or glassmorphism. This is a tactical, Dark-First Utility interface where contrast and performance matter most."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Onboarding & Auth",
+      "purpose": "Get the rider into the app quickly via social or email login.",
+      "states": {
+        "loading": "Amber spinner, brand logo centered.",
+        "empty": "N/A",
+        "error": "Signal red inline text under inputs."
+      },
+      "layout": "Full-bleed background image of a motorcycle rider (with vertical gradient scrim). Large, glove-friendly login buttons anchored to the bottom. Social logins stacked above Email."
+    },
+    {
+      "name": "Dashboard / Home",
+      "purpose": "Provide glanceable ride metrics, active group status, and quick-start actions.",
+      "states": {
+        "loading": "Skeleton frames for metric cards.",
+        "empty": "Illustration of a helmet, 'No active ride. Start exploring.'",
+        "error": "Banner at top: 'Unable to sync ride data.'"
+      },
+      "layout": "Grid of utility cards (Speed, Distance, Connection Status). Dark dashboard imagery. Segmented controls for switching between 'My Stats' and 'Active Group'. Quick action FAB to Start Ride."
+    },
+    {
+      "name": "BLE Pairing",
+      "purpose": "Connect multi-brand intercoms (Sena, Cardo) flawlessly.",
+      "states": {
+        "loading": "Pulsing radar animation or spinner while scanning nearby.",
+        "empty": "Message: 'Searching for intercom devices...'",
+        "error": "Red banner: 'Connection failed. Ensure device is in pairing mode.'"
+      },
+      "layout": "Single-threaded flow. Top scanning indicator. List of nearby devices sorted by signal strength. Selected device opens a bottom sheet with connecting status."
+    },
+    {
+      "name": "Live Map",
+      "purpose": "Track rider positions on a dark topographic map.",
+      "states": {
+        "loading": "Map loading grid.",
+        "empty": "Map centers on user, 'No group riders nearby.'",
+        "error": "Banner: 'GPS signal lost.'"
+      },
+      "layout": "Full-screen dark map. Floating rider avatars (initials or photos) with colored rings. Persistent bottom card showing active group, next turn, and a quick PTT button."
+    },
+    {
+      "name": "PTT / Voice Channel",
+      "purpose": "Walkie-talkie style communication tailored for quick glove taps.",
+      "states": {
+        "loading": "Connecting to channel...",
+        "empty": "No one in channel.",
+        "error": "Disconnected from voice server."
+      },
+      "layout": "Floor-controlled PTT interface. Massive central circular button (Amber = Idle, Red = Transmitting, Green = Receiving). Top half shows active speaker and channel members."
+    },
+    {
+      "name": "Group Management",
+      "purpose": "Create and manage riding groups.",
+      "states": {
+        "loading": "Spinner.",
+        "empty": "Create your first riding group.",
+        "error": "Failed to load members."
+      },
+      "layout": "List layout. Brand-tinted avatar circles for members. Large primary CTA 'Add Rider' pinned to bottom."
+    },
+    {
+      "name": "Profile & Settings",
+      "purpose": "Manage rider profile, bike details, and intercom preferences.",
+      "states": {
+        "loading": "Skeleton rows.",
+        "empty": "N/A",
+        "error": "Failed to save settings."
+      },
+      "layout": "List rows with leading icons. Tinted icon containers for each setting category. Uncluttered, straightforward utility."
+    }
+  ],
+  "images": {
+    "hero_helmet": {
+      "url": "https://images.unsplash.com/photo-1704977733553-e3d7d92c4d66?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHwyfHxtb3RvcmN5Y2xlJTIwcmlkZXIlMjBoZWxtZXQlMjBwb3J0cmFpdCUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4NTY2ODQwMnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Dark moody portrait of a motorcycle helmet"
+    },
+    "dash_night": {
+      "url": "https://images.unsplash.com/photo-1598537630388-236d3e22cfa9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwyfHxtb3RvcmN5Y2xlJTIwZGFzaGJvYXJkJTIwYXQlMjBuaWdodHxlbnwwfHx8fDE3ODU2Njg0MDJ8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Motorcycle dashboard illuminated at night"
+    },
+    "dark_map_texture": {
+      "url": "https://images.unsplash.com/photo-1726092707889-c4ef049d22df?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwxfHxkYXJrJTIwdG9wb2dyYXBoaWMlMjBtYXAlMjB0ZXh0dXJlfGVufDB8fHx8MTc4NTY2ODQwMnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Dark abstract topographic map texture"
+    },
+    "rider_1": {
+      "url": "https://images.pexels.com/photos/5704348/pexels-photo-5704348.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Woman in black leather jacket and helmet"
+    },
+    "google_logo": {
+      "url": "https://images.unsplash.com/photo-1662947190722-5d272f82a526?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxHb29nbGUlMjBsb2dvJTIwdHJhbnNwYXJlbnQlMjBwbmd8ZW58MHx8fHwxNzg1NjY4NDE4fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Google logo"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Follow the 'Dark-First Utility DARK' personality strictly. Do not use glassmorphism or blur effects; use solid layers, borders, and high-contrast dividers.",
+    "BANNED: Any shade of blue, purple, or indigo. Stick entirely to carbon greys, obsidian blacks, and the warm Amber/Signal Red accents.",
+    "For the PTT/Voice screen, build a massive, tactile circular button taking up the bottom half of the screen. Wire state changes (idle, transmitting, receiving) visually via background/border color shifts.",
+    "For text placed over the `hero_helmet` or `dark_map_texture` background images, you MUST use the 3-stop vertical gradient scrim (transparent to surfaceInverse) to guarantee WCAG readability.",
+    "Ensure all interactive components (cards, PTT buttons, auth buttons) have minimum 56pt height and generous hitSlop to support riders using gloves.",
+    "Group members lacking real avatars should fallback to initials centered in a brandTertiary circle.",
+    "In the BLE pairing screen, maintain a single-column list of devices sorted by strength, and ensure scanning state is visually explicit (e.g., radar pulse or prominent spinner)."
+  ],
+  "haptics": {
+    "ptt_press": "heavy",
+    "ptt_release": "medium",
+    "device_connected": "success",
+    "device_failed": "error",
+    "tab_switch": "light"
+  }
+}
