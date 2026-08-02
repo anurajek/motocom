@@ -1,0 +1,39 @@
+{
+  "summary": "First-run full-stack test of MotoCom. Backend: 19/19 pytest tests PASS covering auth (register/login/me + duplicate/401), groups (create/list/get/members/join/invalid-code/leave), messages (send + asc order), locations (upsert), devices (add auto-disconnect others, toggle, delete), rides (create + reverse-chrono), and _id leak check across all resources. Frontend: verified login screen loads unauthenticated, register-> dashboard, Log Ride adds to Recent Rides, Pair Intercom scan+PAIR saves & marks device Connected, Groups create + open detail with CHAT tab (message appears) and MEMBERS tab (invite code visible), Live Map shows group chip + Broadcast increments active riders count and renders a rider marker, PTT hold changes label to TRANSMITTING (verified via touch events; ptt-channel-name reflects selected group), Profile screen accessible from dashboard header, Sign out returns to login, wrong-password login displays login-error. Google button present and not clicked as instructed. No critical bugs. Two Expo/RN deprecation console warnings observed (see react_native_issues).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles (multiple screens)", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Emitted by react-native-web. Consider migrating shadow props to boxShadow for web parity. Reference: styles across screens (grep for shadowColor/shadowOffset/shadowOpacity/shadowRadius in /app/frontend/app/**)."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Some component passes pointerEvents as prop instead of style. Reference: search pointerEvents= in /app/frontend/app/** and /app/frontend/src/**."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_motocom_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate shadow* style props to boxShadow to remove RN web deprecation warnings.",
+    "(Optional) Move pointerEvents from prop to style.pointerEvents to remove RN web deprecation warning.",
+    "No functional fixes required."
+  ],
+  "critical_code_review_comments": [
+    "server.py uses EmailStr strict validation which rejects .test TLD (reserved). Tests updated to use motocom-test.com; keep in mind for future seed data.",
+    "GET /api/groups/{id} and /messages/locations do not enforce membership check - any authenticated user can read any group's data if they know the group_id. Consider adding membership check for privacy.",
+    "POST /api/groups/{id}/messages and /location do not verify caller is a group member either. Minor privacy concern but not a functional bug for the current scope."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_motocom_api.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Tests create ephemeral users with emails like test_a_<hex>@motocom-test.com and test_b_<hex>@motocom-test.com plus TEST_Group_<hex>. No cleanup needed for this preview DB (unique per run).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend at https://intercom-hub-3.preview.emergentagent.com/api. Create users via POST /api/auth/register with a non-.test TLD (EmailStr rejects .test). Use Authorization: Bearer <token> header. All endpoints strip _id in responses. Frontend testIDs are documented inline; PTT button on web preview responds to touch events (dispatchEvent 'touchstart'/'touchend') rather than mouse.down/mouse.up - use touch events when scripting PTT hold. Tab labels are Ride/Map/Talk/Groups; access via page.get_by_role('tab', name='Ride') to disambiguate from other 'Map/Talk' text on screen. Google OAuth button (google-signin-button) exists on login and MUST NOT be clicked in automated tests.",
+  "rca_of_issue": "No bugs to RCA. Note: initial pytest run failed with 422 due to EmailStr rejecting .test TLD - fixed test data to @motocom-test.com. Initial PTT UI test appeared to fail (state stayed HOLD TO TALK) using page.mouse.down/up; root cause is that RN-Web's Pressable listens to touch/pointer events for onPressIn/Out - re-tested with dispatched touch events and PTT correctly transitions to TRANSMITTING then back to HOLD TO TALK. Functionality is correct on real devices."
+}
