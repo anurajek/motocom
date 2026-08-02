@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 3 testing COMPLETE. Backend: 40/40 pytest PASS (27 regression from iter1/iter2 + 13 new iter3 tests). All new endpoints work as specified: GET /api/rides/{id} returns ride scoped to owner and 404 for foreign/nonexistent; DELETE /api/rides/{id} returns {ok:true}, removes both ride and ride_points (verified via GET afterwards), and 404 for foreign ride; GET /api/rides/{id}/gpx returns 200 with Content-Type application/gpx+xml, Content-Disposition 'attachment; filename=...', body contains '<gpx version=\"1.1\"' and <trkpt lat=\"...\" lon=\"...\"> for each of the 5 seeded points; GET /api/rides/heatmap returns {points:[], ride_count:0, is_pro:false} for a fresh user and returns sampled points with lat/lng/w keys plus ride_count>=1 after tracking. CRITICAL route-ordering fix verified — /rides/heatmap is NOT shadowed by /rides/{ride_id} because in server.py the heatmap route is registered BEFORE the parametric route (server.py:606 vs 621). Also, iter2's known billing 500 bug is NOW FIXED (main agent added placeholder-detection at server.py:701-704 and try/except around stripe.checkout.Session.create at 715-732; the test test_checkout_session_returns_clean_error_when_stripe_not_configured now passes with 503). Frontend (Expo web preview, 390x844): Register → Dashboard → Log Ride (demo) → tap SEE ALL → /rides list (testID rides-screen) with 2 rides shown correctly. Tap tracked ride card (testID ride-card-<id>) → /rides/[id] (testID ride-detail-screen) — shows title, date, 3 stat cards (3.9 km / 2 min / 55 km/h), radar map wrap with START/END markers, ROUTE POINTS card with PRO chip and '6 GPS points logged'. DOWNLOAD GPX button (testID download-gpx-button, PRO chip) triggered a real browser download event with suggested filename 'TEST_UITrackedRide.gpx' and success message 'GPX file downloaded.' appeared (testID ride-message). Heatmap accessible from BOTH /rides → HEATMAP button (testID open-heatmap-button) AND Profile → Ride Heatmap row (testID profile-heatmap-row). Heatmap screen (testID heatmap-screen) shows PRO chip, 3 stat cards, radar-view map preview, empty state (testID heatmap-empty) with OPEN MAP button (testID empty-go-map) when no tracked rides. Regression: login/register/dashboard nav all work. Deprecated warnings unchanged from iter2: shadow* style props → boxShadow (RN-web deprecation, non-blocking).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "styles (multiple screens, carried over from iter1/iter2)", "issue": "Console warning '\"shadow*\" style props are deprecated. Use \"boxShadow\".' still present across shared components. Reference: grep shadowColor|shadowOffset|shadowOpacity|shadowRadius in /app/frontend/app/** and /app/frontend/src/**. Non-blocking on iter3 features but a lingering code-review item."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_motocom_api.py",
+    "/app/backend/tests/test_iter2_new.py",
+    "/app/backend/tests/test_iter3_rides.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional lint) Migrate shadow* style props → style.boxShadow to silence RN-web deprecation warnings. No functional impact on iter3."
+  ],
+  "critical_code_review_comments": [
+    "server.py:606 (rides_heatmap) is correctly declared BEFORE server.py:621 (get_ride) so FastAPI matches the literal '/rides/heatmap' before the '/rides/{ride_id}' template — verified end-to-end (test_heatmap_route_not_shadowed_by_id_route PASS).",
+    "server.py:629-636 (delete_ride) correctly scopes both the ride deletion AND the ride_points deletion by user_id — no cross-user data leak (test_delete_ride_foreign_404 PASS).",
+    "server.py:639-668 (export_gpx) escapes '<' and '&' in ride name, uses trkpt lat/lon (not lng), and sets Content-Type + Content-Disposition headers correctly. GPX 1.1 declaration and topografix namespace present.",
+    "server.py:701-704 — Stripe placeholder detection now correctly catches 'sk_test_emergent'/'price_placeholder' AND server.py:730-732 wraps the SDK call in try/except stripe.StripeError → 503. Iter2 blocker RESOLVED.",
+    "/app/frontend/app/rides/[id].tsx:44-87 — downloadGpx correctly branches Platform.OS==='web' (fetch as blob → createObjectURL → <a download>) vs native (FileSystem.downloadAsync + Sharing.shareAsync). Auth token attached to request. Button disabled when points.length===0 AND downloading, so the demo-ride safety footnote is user-visible.",
+    "/app/frontend/app/rides/index.tsx:17-22 — the load() function swallows all errors with `catch {}` and only relies on `finally { setLoading(false) }`; if /api/rides fails the user gets a permanent 'empty list' with no error message. Consider surfacing errors like the ride-detail screen does. Non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter3_rides.py (NEW — 13 test cases across GET /rides/{id}, DELETE /rides/{id}, GET /rides/{id}/gpx, GET /rides/heatmap)"
+  ],
+  "success_rate": {"backend": "100% (40/40)", "frontend": "100% (all iter3 flows verified end-to-end incl. real browser GPX download)"},
+  "seed_data_creation": "Ephemeral users created via /api/auth/register (emails test_a_<hex>@ / test_b_<hex>@ / iter3b_<epoch>@motocom-test.com). Test rides created via POST /api/rides/track for GPX/heatmap tests, and one demo ride via POST /api/rides for the dashboard flow. All auto-cleaned by test class scope where possible; no manual cleanup needed on preview DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter3 delivers ride history + GPX + heatmap. Everything passes. Backend: https://intercom-hub-3.preview.emergentagent.com/api. Frontend testIDs for iter3: rides-screen, rides-back-button, open-heatmap-button, ride-card-<ride_id>, empty-rides, ride-detail-screen, ride-back-button, ride-delete-button, download-gpx-button, ride-message, ride-error, heatmap-screen, heatmap-back-button, heatmap-empty, empty-go-map, heatmap-error, profile-heatmap-row. To reach a ride card in tests you MUST allow ~3-4s after mounting the rides-screen for the /api/rides fetch to resolve before querying [data-testid^='ride-card-']. To reach ride detail for a REAL tracked ride (needed for GPX download), seed via POST /api/rides/track with 5+ points using the bearer token from localStorage — the 'Log Ride' button on the dashboard creates a demo ride with 0 points and the DOWNLOAD GPX button is intentionally disabled with the 'demo entry' footnote for those. Route order in server.py places /rides/heatmap (line 606) before /rides/{ride_id} (line 621) — do not reorder. Iter2 Stripe placeholder bug is RESOLVED. Remaining chore: migrate shadow* → boxShadow to silence deprecation warnings.",
+  "rca_of_issue": "No new bugs found in iter3. All backend endpoints, route ordering, GPX headers/body, heatmap sampling, delete cascade, and frontend flows (rides list → detail → GPX download; rides list → heatmap; profile → heatmap) verified working end-to-end. Iter2 checkout-session 500 bug is CONFIRMED FIXED at server.py:701-732."
+}

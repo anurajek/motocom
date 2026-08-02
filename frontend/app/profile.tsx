@@ -14,6 +14,8 @@ export default function Profile() {
 
   const rows: { icon: any; label: string; onPress: () => void; testID: string; badge?: string }[] = [
     { icon: 'crown', label: 'Rider Pro', onPress: () => router.push('/rider-pro'), testID: 'profile-riderpro-row', badge: 'UPGRADE' },
+    { icon: 'motorbike', label: 'Ride History', onPress: () => router.push('/rides'), testID: 'profile-rides-row' },
+    { icon: 'fire', label: 'Ride Heatmap', onPress: () => router.push('/rides/heatmap'), testID: 'profile-heatmap-row', badge: 'PRO' },
     { icon: 'bluetooth', label: 'Paired Intercoms', onPress: () => router.push('/pair'), testID: 'profile-pair-row' },
     { icon: 'account-group', label: 'My Groups', onPress: () => router.push('/(tabs)/groups'), testID: 'profile-groups-row' },
     { icon: 'map-marker-radius', label: 'Live Map', onPress: () => router.push('/(tabs)/map'), testID: 'profile-map-row' },

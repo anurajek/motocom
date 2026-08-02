@@ -603,6 +603,71 @@ async def track_ride(body: TrackBatch, user=Depends(get_current_user)):
     return {"ride_id": ride_id, "points": len(points), "distance_km": round(total_km, 2)}
 
 
+@api_router.get("/rides/heatmap")
+async def rides_heatmap(user=Depends(get_current_user)):
+    """Return sampled points across all rides for heatmap rendering."""
+    rides = await db.rides.find({"user_id": user["user_id"]}, {"_id": 0, "ride_id": 1}).to_list(500)
+    ride_ids = [r["ride_id"] for r in rides]
+    if not ride_ids:
+        return {"points": [], "ride_count": 0, "is_pro": bool(user.get("is_pro"))}
+    # Sample every Nth point to keep payload small
+    cursor = db.ride_points.find({"ride_id": {"$in": ride_ids}}, {"_id": 0, "lat": 1, "lng": 1, "speed": 1})
+    all_points = await cursor.to_list(50000)
+    stride = max(1, len(all_points) // 3000)
+    sampled = [{"lat": p["lat"], "lng": p["lng"], "w": min(1.0, (p.get("speed") or 0) / 120)} for p in all_points[::stride]]
+    return {"points": sampled, "ride_count": len(ride_ids), "is_pro": bool(user.get("is_pro"))}
+
+
+@api_router.get("/rides/{ride_id}", response_model=RideOut)
+async def get_ride(ride_id: str, user=Depends(get_current_user)):
+    r = await db.rides.find_one({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Ride not found")
+    return RideOut(**r)
+
+
+@api_router.delete("/rides/{ride_id}")
+async def delete_ride(ride_id: str, user=Depends(get_current_user)):
+    r = await db.rides.find_one({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Ride not found")
+    await db.rides.delete_one({"ride_id": ride_id, "user_id": user["user_id"]})
+    await db.ride_points.delete_many({"ride_id": ride_id, "user_id": user["user_id"]})
+    return {"ok": True}
+
+
+@api_router.get("/rides/{ride_id}/gpx")
+async def export_gpx(ride_id: str, user=Depends(get_current_user)):
+    """Export the ride as a standard GPX 1.1 file."""
+    from fastapi.responses import Response
+    from datetime import datetime as dt
+    r = await db.rides.find_one({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Ride not found")
+    pts = await db.ride_points.find({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0}).sort("ts", 1).to_list(20000)
+    name = (r.get("name") or "Ride").replace("<", "&lt;").replace("&", "&amp;")
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<gpx version="1.1" creator="MotoCom" xmlns="http://www.topografix.com/GPX/1/1">',
+        f'  <metadata><name>{name}</name></metadata>',
+        f'  <trk><name>{name}</name><trkseg>',
+    ]
+    for p in pts:
+        ts = dt.utcfromtimestamp(p["ts"]).strftime("%Y-%m-%dT%H:%M:%SZ")
+        lines.append(
+            f'    <trkpt lat="{p["lat"]:.6f}" lon="{p["lng"]:.6f}">'
+            f'<time>{ts}</time><speed>{(p.get("speed") or 0) / 3.6:.2f}</speed></trkpt>'
+        )
+    lines += ['  </trkseg></trk>', '</gpx>']
+    body = "\n".join(lines)
+    filename = f"{ride_id}.gpx"
+    return Response(
+        content=body,
+        media_type="application/gpx+xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @api_router.get("/rides/{ride_id}/points")
 async def get_ride_points(ride_id: str, user=Depends(get_current_user)):
     rows = await db.ride_points.find({"ride_id": ride_id, "user_id": user["user_id"]}, {"_id": 0}).sort("ts", 1).to_list(10000)

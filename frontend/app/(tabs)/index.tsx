@@ -137,7 +137,12 @@ export default function Dashboard() {
         </View>
 
         {/* Recent rides */}
-        <Text style={s.sectionTitle}>RECENT RIDES</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.md }}>
+          <Text style={[s.sectionTitle, { marginTop: 0, flex: 1 }]}>RECENT RIDES</Text>
+          <Pressable onPress={() => router.push('/rides')} hitSlop={10} testID="see-all-rides-button">
+            <Text style={s.seeAll}>SEE ALL</Text>
+          </Pressable>
+        </View>
         {rides.length === 0 ? (
           <View style={s.emptyBox} testID="empty-rides">
             <MaterialCommunityIcons name="motorbike" size={36} color={colors.onSurfaceTertiary} />
@@ -146,7 +151,12 @@ export default function Dashboard() {
         ) : (
           <View style={{ gap: spacing.sm }}>
             {rides.slice(0, 5).map((r) => (
-              <View key={r.ride_id} style={s.rideCard} testID={`ride-item-${r.ride_id}`}>
+              <Pressable
+                key={r.ride_id}
+                onPress={() => router.push(`/rides/${r.ride_id}`)}
+                style={({ pressed }) => [s.rideCard, pressed && { borderColor: colors.brand }]}
+                testID={`ride-item-${r.ride_id}`}
+              >
                 <View style={s.rideIconBox}>
                   <MaterialCommunityIcons name="road-variant" size={22} color={colors.brand} />
                 </View>
@@ -156,7 +166,8 @@ export default function Dashboard() {
                     {r.distance_km.toFixed(1)} km · {r.duration_min} min · top {Math.round(r.top_speed)} km/h
                   </Text>
                 </View>
-              </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceTertiary} />
+              </Pressable>
             ))}
           </View>
         )}
@@ -263,6 +274,7 @@ const s = StyleSheet.create({
   },
   rideName: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
   rideMeta: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
+  seeAll: { color: colors.brand, fontSize: 11, letterSpacing: 1.5, fontWeight: '900' },
 
   logoutBtn: {
     marginTop: spacing.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
