@@ -633,7 +633,9 @@ async def billing_status(user=Depends(get_current_user)):
 
 @api_router.post("/billing/checkout-session")
 async def create_checkout_session(body: CheckoutInput, request: Request, user=Depends(get_current_user)):
-    if not STRIPE_SECRET_KEY or not STRIPE_RIDER_PRO_PRICE_ID:
+    placeholder_key = STRIPE_SECRET_KEY in (None, "", "sk_test_emergent")
+    placeholder_price = STRIPE_RIDER_PRO_PRICE_ID in (None, "", "price_placeholder")
+    if placeholder_key or placeholder_price:
         raise HTTPException(503, "Stripe not configured. Set STRIPE_SECRET_KEY and STRIPE_RIDER_PRO_PRICE_ID.")
 
     existing = await db.subscriptions.find_one({"user_id": user["user_id"]}, {"_id": 0})
@@ -645,20 +647,24 @@ async def create_checkout_session(body: CheckoutInput, request: Request, user=De
     success = f"{base}/api/billing/success?session_id={{CHECKOUT_SESSION_ID}}&return_url={quote(return_url, safe='')}"
     cancel = f"{base}/api/billing/cancel-page?return_url={quote(return_url, safe='')}"
 
-    session = stripe.checkout.Session.create(
-        mode="subscription",
-        line_items=[{"price": STRIPE_RIDER_PRO_PRICE_ID, "quantity": 1}],
-        success_url=success,
-        cancel_url=cancel,
-        customer_email=user.get("email"),
-        payment_method_collection="always",
-        subscription_data={
-            "trial_period_days": 7,
-            "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
-            "metadata": {"user_id": user["user_id"], "plan": "rider_pro"},
-        },
-        metadata={"user_id": user["user_id"], "plan": "rider_pro"},
-    )
+    try:
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": STRIPE_RIDER_PRO_PRICE_ID, "quantity": 1}],
+            success_url=success,
+            cancel_url=cancel,
+            customer_email=user.get("email"),
+            payment_method_collection="always",
+            subscription_data={
+                "trial_period_days": 7,
+                "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
+                "metadata": {"user_id": user["user_id"], "plan": "rider_pro"},
+            },
+            metadata={"user_id": user["user_id"], "plan": "rider_pro"},
+        )
+    except stripe.StripeError as e:
+        msg = getattr(e, "user_message", None) or str(e)
+        raise HTTPException(503, f"Stripe error: {msg}")
     return {"url": session.url}
 
 
@@ -667,7 +673,10 @@ async def cancel_subscription(user=Depends(get_current_user)):
     rec = await db.subscriptions.find_one({"user_id": user["user_id"]}, {"_id": 0})
     if not rec or not rec.get("stripe_subscription_id"):
         raise HTTPException(404, "No subscription")
-    sub = stripe.Subscription.modify(rec["stripe_subscription_id"], cancel_at_period_end=True)
+    try:
+        sub = stripe.Subscription.modify(rec["stripe_subscription_id"], cancel_at_period_end=True)
+    except stripe.StripeError as e:
+        raise HTTPException(503, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
     await db.subscriptions.update_one(
         {"user_id": user["user_id"]},
         {"$set": {"cancel_at_period_end": True}},

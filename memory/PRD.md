@@ -46,9 +46,11 @@ A cross-brand motorcycle intercom companion app for group riding. Riders pair th
 
 ## Technical Notes / Caveats
 
-- **Real BLE control of Sena/Cardo hardware is NOT possible** via public APIs. They use proprietary protocols and manufacturer SDKs. This app **simulates** discovery/pairing to give an authentic UX. Native BLE scanning (react-native-ble-plx) can be added in a development build for real device discovery — but audio bridging to intercoms still requires manufacturer partnerships.
-- **PTT is UI-only** (voice transport not implemented). Real WebRTC/LiveKit voice channels can be added later.
-- **Google Maps not integrated** — a stylized radar map is used to avoid preview limitations of react-native-maps. Can be swapped to react-native-maps in a native build.
+- **BLE real scanning is now wired** via `react-native-ble-plx` with automatic fallback to a simulated scanner on web / Expo Go. Real device discovery requires a **dev/production build** (react-native-ble-plx is a native module). Audio bridging to intercoms still requires manufacturer partnerships.
+- **PTT is UI-only** (voice transport not implemented — LiveKit intentionally skipped per user request).
+- **Google Maps** is now wired via `react-native-maps` (PROVIDER_GOOGLE) on native, with the radar fallback still used on web. To render real Google Maps in production, replace the two `REPLACE_WITH_YOUR_GOOGLE_MAPS_*_KEY` placeholders in `app.json`.
+- **Background ride recording** implemented with `expo-location` + `expo-task-manager`. Points are batched and posted to `/api/rides/track` every 30s. Web falls back to `navigator.geolocation.watchPosition` (foreground only).
+- **Rider Pro subscription** ($4.99/month, 7-day trial) implemented end-to-end. Backend: `/api/billing/*` endpoints + Stripe webhook. Frontend: `/rider-pro` screen using Stripe Checkout via `expo-web-browser` + deep link. **Requires** replacing placeholders in `backend/.env`: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_RIDER_PRO_PRICE_ID`. Backend returns 503 with a clean error when placeholders are still in use.
 
 ## Backend
 
