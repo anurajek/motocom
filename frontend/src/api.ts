@@ -30,7 +30,7 @@ export async function setToken(token: string | null): Promise<void> {
   else await SecureStore.deleteItemAsync('motocom_token').catch(() => {});
 }
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL=https://motocom-backend.onrender.com;
 
 export async function api<T = any>(
   path: string,
