@@ -29,12 +29,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       const t = await getToken();
-      if (!t) {
-        setUser(null);
-      } else {
-        const me = await api<User>('/auth/me');
-        setUser(me);
-      }
+if (!t) {
+  setUser(null);           // ← first install: no token, resolves instantly
+} else {
+  const me = await api<User>('/auth/me');  // ← after login: token exists, makes a real network call
+  setUser(me);
+}
     } catch {
       await setToken(null);
       setUser(null);
