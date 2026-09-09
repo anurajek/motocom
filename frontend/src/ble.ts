@@ -54,30 +54,38 @@ function base64ToUtf8(base64: string): string {
   }
 }
 
-export async function resolveDeviceName(deviceId: string): Promise<string | null> {
+export async function resolveDeviceName(deviceId: string): Promise<{ name: string | null; debug: string }> {
   const manager = await tryLoadNative();
-  if (!manager) return null;
+  if (!manager) return { name: null, debug: 'no-native-manager' };
+
+  let device: any;
   try {
-    const device = await manager.connectToDevice(deviceId, { timeout: 8000 });
+    device = await manager.connectToDevice(deviceId, { timeout: 8000 });
+  } catch (e: any) {
+    return { name: null, debug: `connect-failed:${e?.message || e?.errorCode || String(e)}` };
+  }
+
+  try {
     await device.discoverAllServicesAndCharacteristics();
-    try {
-      const char = await device.readCharacteristicForService(
-        '00001800-0000-1000-8000-00805f9b34fb',
-        '00002a00-0000-1000-8000-00805f9b34fb'
-      );
-      const raw = char?.value;
-      const name = raw ? base64ToUtf8(raw).trim() : '';
-      await device.cancelConnection().catch(() => {});
-      return name || null;
-    } catch {
-      await device.cancelConnection().catch(() => {});
-      return null;
-    }
-  } catch {
-    return null;
+  } catch (e: any) {
+    await device.cancelConnection().catch(() => {});
+    return { name: null, debug: `discover-failed:${e?.message || String(e)}` };
+  }
+
+  try {
+    const char = await device.readCharacteristicForService(
+      '00001800-0000-1000-8000-00805f9b34fb',
+      '00002a00-0000-1000-8000-00805f9b34fb'
+    );
+    const raw = char?.value;
+    const name = raw ? base64ToUtf8(raw).trim() : '';
+    await device.cancelConnection().catch(() => {});
+    return { name: name || null, debug: name ? 'read-ok' : 'empty-value' };
+  } catch (e: any) {
+    await device.cancelConnection().catch(() => {});
+    return { name: null, debug: `read-failed:${e?.message || String(e)}` };
   }
 }
-
 export function mockScan(count = 5): ScanResult[] {
   const items: ScanResult[] = [];
   const used = new Set<string>();

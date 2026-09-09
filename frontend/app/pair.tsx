@@ -81,11 +81,13 @@ export default function Pair() {
       let resolvedName = item.name;
       let resolvedBrand = item.brand;
 
-      if (item.name === 'Unknown Device') {
-        const realName = await resolveDeviceName(item.device_id);
-        if (realName) {
-          resolvedName = realName;
-          resolvedBrand = inferBrand(realName);
+            if (item.name === 'Unknown Device') {
+        const result = await resolveDeviceName(item.device_id);
+        if (result.name) {
+          resolvedName = result.name;
+          resolvedBrand = inferBrand(result.name);
+        } else {
+          setError(`Name lookup: ${result.debug}`);
         }
       } else {
         await new Promise((r) => setTimeout(r, 1200));
