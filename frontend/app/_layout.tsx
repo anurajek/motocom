@@ -18,12 +18,13 @@ function AuthGate() {
   const segments = useSegments();
   const router = useRouter();
 
-  useEffect(() => {
+    useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === '(auth)';
+    const inTabs = segments[0] === '(tabs)';
     if (!user && !inAuth) {
       router.replace('/(auth)/login');
-    } else if (user && inAuth) {
+    } else if (user && !inTabs) {
       router.replace('/(tabs)');
     }
   }, [user, loading, segments, router]);
