@@ -42,20 +42,20 @@ export async function api<T = any>(
     ...(opts.headers as Record<string, string>),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const controller = new AbortController();
-const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-let res: Response;
-try {
-  res = await fetch(`${BASE}/api${path}`, { ...opts, headers, signal: controller.signal });
-} catch (err: any) {
-  if (err.name === 'AbortError') {
-    throw new Error('Request timed out — please check your connection and try again.');
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, { ...opts, headers, signal: controller.signal });
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out — please check your connection and try again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  throw err;
-} finally {
-  clearTimeout(timeoutId);
-}
   if (!res.ok) {
     let msg = `Error ${res.status}`;
     try {
