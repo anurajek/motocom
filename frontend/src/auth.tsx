@@ -13,7 +13,6 @@ type AuthCtx = {
   user: User | null;
   loading: boolean;
   debugInfo: string;
-  ...
   signInEmail: (email: string, password: string) => Promise<void>;
   registerEmail: (email: string, password: string, name: string, bike?: string) => Promise<void>;
   applyToken: (token: string) => Promise<void>;
