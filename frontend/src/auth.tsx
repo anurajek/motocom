@@ -25,21 +25,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const bootstrap = useCallback(async () => {
+    const bootstrap = useCallback(async () => {
     setLoading(true);
+    let finished = false;
+
+    const hardTimeout = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        setUser(null);
+        setLoading(false);
+      }
+    }, 12000);
+
     try {
       const t = await getToken();
-if (!t) {
-  setUser(null);           // ← first install: no token, resolves instantly
-} else {
-  const me = await api<User>('/auth/me');  // ← after login: token exists, makes a real network call
-  setUser(me);
-}
+      if (!t) {
+        setUser(null);
+      } else {
+        const me = await api<User>('/auth/me');
+        setUser(me);
+      }
     } catch {
-      await setToken(null);
       setUser(null);
+      setToken(null).catch(() => {});
     } finally {
-      setLoading(false);
+      if (!finished) {
+        finished = true;
+        setLoading(false);
+      }
+      clearTimeout(hardTimeout);
     }
   }, []);
 
