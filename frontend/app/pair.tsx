@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius } from '@/src/theme';
 import { api } from '@/src/api';
-import { createBle, type BleController, type ScanResult } from '@/src/ble';
+import { createBle, resolveDeviceName, inferBrand, type BleController, type ScanResult } from '@/src/ble';
 
 type Device = {
   id: string;
@@ -78,12 +78,24 @@ export default function Pair() {
     setConnecting(item.device_id);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     try {
-      await new Promise((r) => setTimeout(r, 1200));
+      let resolvedName = item.name;
+      let resolvedBrand = item.brand;
+
+      if (item.name === 'Unknown Device') {
+        const realName = await resolveDeviceName(item.device_id);
+        if (realName) {
+          resolvedName = realName;
+          resolvedBrand = inferBrand(realName);
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+
       await api('/devices', {
         method: 'POST',
         body: JSON.stringify({
-          device_name: item.name,
-          brand: item.brand,
+          device_name: resolvedName,
+          brand: resolvedBrand,
           device_id: item.device_id,
           rssi: item.rssi,
         }),

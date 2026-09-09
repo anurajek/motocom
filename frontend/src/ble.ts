@@ -23,7 +23,7 @@ const BRANDS = [
   { brand: 'Generic', prefixes: ['BT Intercom', 'Helmet BT'] },
 ];
 
-function inferBrand(name: string | null | undefined): string {
+export function inferBrand(name: string | null | undefined): string {
   if (!name) return 'Generic';
   const n = name.toLowerCase();
   if (n.includes('sena') || n.startsWith('50s') || n.startsWith('30k') || n.startsWith('sf')) return 'Sena';
@@ -32,6 +32,50 @@ function inferBrand(name: string | null | undefined): string {
   if (n.includes('interphone') || n.includes('u-com')) return 'Interphone';
   if (n.includes('midland') || n.includes('btx')) return 'Midland';
   return 'Generic';
+}
+
+function base64ToUtf8(base64: string): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const str = base64.replace(/=+$/, '');
+  let output = '';
+  let bits = 0, value = 0;
+  for (let i = 0; i < str.length; i++) {
+    value = (value << 6) | chars.indexOf(str[i]);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      output += String.fromCharCode((value >> bits) & 0xff);
+    }
+  }
+  try {
+    return decodeURIComponent(escape(output));
+  } catch {
+    return output;
+  }
+}
+
+export async function resolveDeviceName(deviceId: string): Promise<string | null> {
+  const manager = await tryLoadNative();
+  if (!manager) return null;
+  try {
+    const device = await manager.connectToDevice(deviceId, { timeout: 8000 });
+    await device.discoverAllServicesAndCharacteristics();
+    try {
+      const char = await device.readCharacteristicForService(
+        '00001800-0000-1000-8000-00805f9b34fb',
+        '00002a00-0000-1000-8000-00805f9b34fb'
+      );
+      const raw = char?.value;
+      const name = raw ? base64ToUtf8(raw).trim() : '';
+      await device.cancelConnection().catch(() => {});
+      return name || null;
+    } catch {
+      await device.cancelConnection().catch(() => {});
+      return null;
+    }
+  } catch {
+    return null;
+  }
 }
 
 export function mockScan(count = 5): ScanResult[] {
